@@ -1,4 +1,4 @@
--- T63-Hub (Full Integrated & Completely Fixed Version)
+-- Naberius (Full Integrated & Completely Fixed Version)
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local VirtualUser = game:GetService("VirtualUser")
@@ -29,7 +29,7 @@ end
 
 -- 창 생성
 local Window = Library:CreateWindow({
-    Title = 'T63-Hub',
+    Title = 'Naberius',
     Center = true,
     AutoShow = true,
 })
