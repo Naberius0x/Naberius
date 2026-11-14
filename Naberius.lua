@@ -1315,8 +1315,8 @@ ThemeManager:ApplyToTab(Tabs.Settings)
 
 local SettingsGroupBox = Tabs.Settings:AddLeftGroupbox('Menu Settings')
 
--- Linoria에서 키바인드는 그룹박스가 아니라 Label에 붙여야 합니다
-SettingsGroupBox:AddLabel('Menu bind'):AddKeybind('MenuKeybind', { 
+-- Linoria에서 키바인드는 그룹박스가 아니라 Label에 AddKeyPicker로 붙여야 합니다
+SettingsGroupBox:AddLabel('Menu bind'):AddKeyPicker('MenuKeybind', {
     Default = 'RightShift', 
     Mode = 'Toggle', 
     NoUI = true, 
