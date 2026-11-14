@@ -1,4 +1,4 @@
--- Naberius Script (Fully Fixed & Restructured)
+-- Naberius Script (Original Structure Preserved + Bug Fixed)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -18,6 +18,14 @@ local SaveManager = loadstring(game:HttpGet(repo .. 'addons/SaveManager.lua'))()
 
 local Toggles = Library.Toggles
 local Options = Library.Options
+
+local function getGuiParent()
+local ok, parent = pcall(function()
+if gethui then return gethui() end
+return CoreGui
+end)
+return (ok and parent) or Player:WaitForChild("PlayerGui")
+end
 
 local Window = Library:CreateWindow({
 Title = 'Naberius',
@@ -43,13 +51,16 @@ Tooltip = '10초마다 자동으로 점프하여 AFK 감지를 방지합니다.'
 Callback = function(val)
 if antiAfkJumpConn then antiAfkJumpConn:Disconnect(); antiAfkJumpConn = nil end
 if val then
-local lastJump = tick()
+local lastJump = 0
 antiAfkJumpConn = RunService.Heartbeat:Connect(function()
 if tick() - lastJump >= 10 then
 lastJump = tick()
 local char = Player.Character
 local hum = char and char:FindFirstChildOfClass('Humanoid')
-if hum then hum.Jump = true end
+if hum then
+hum.Jump = true
+hum:ChangeState(Enum.HumanoidStateType.Jumping)
+end
 end
 end)
 end
@@ -63,7 +74,7 @@ Tooltip = '키보드 1번 키를 0.5초마다 눌러 AFK를 방지합니다.',
 Callback = function(val)
 if antiAfkKeyConn then antiAfkKeyConn:Disconnect(); antiAfkKeyConn = nil end
 if val then
-local lastPress = tick()
+local lastPress = 0
 antiAfkKeyConn = RunService.Heartbeat:Connect(function()
 if tick() - lastPress >= 0.5 then
 lastPress = tick()
@@ -85,7 +96,7 @@ Default = false,
 Tooltip = '그래픽 품질을 최소화하여 FPS를 올립니다.',
 Callback = function(val)
 if val then
-settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+pcall(function() settings().Rendering.QualityLevel = Enum.QualityLevel.Level01 end)
 pcall(function() Workspace.StreamingEnabled = false end)
 pcall(function()
 for _, v in pairs(Lighting:GetChildren()) do
@@ -98,7 +109,7 @@ Lighting.FogEnd = 100000
 Lighting.FogStart = 99999
 end)
 else
-settings().Rendering.QualityLevel = Enum.QualityLevel.Automatic
+pcall(function() settings().Rendering.QualityLevel = Enum.QualityLevel.Automatic end)
 pcall(function()
 for _, v in pairs(Lighting:GetChildren()) do
 if v:IsA('BlurEffect') or v:IsA('DepthOfFieldEffect') or v:IsA('SunRaysEffect') or v:IsA('BloomEffect') or v:IsA('ColorCorrectionEffect') then
@@ -129,7 +140,9 @@ Tooltip = 'Ctrl 누른 채 클릭하면 그 위치로 순간이동합니다.',
 Callback = function() end
 })
 
-Mouse.Button1Down:Connect(function()
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+if gameProcessed then return end
+if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
 if not Toggles['CtrlClickTp'] or not Toggles['CtrlClickTp'].Value then return end
 if not UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) and not UserInputService:IsKeyDown(Enum.KeyCode.RightControl) then return end
 local char = Player.Character
@@ -188,7 +201,8 @@ local VisLeft = VisualsTab:AddLeftGroupbox('Player ESP')
 local VisRight = VisualsTab:AddRightGroupbox('Object ESP & X-Ray')
 local VisFree = VisualsTab:AddLeftGroupbox('Freecam')
 
-local espData = {}
+-- Player ESP
+local espData = {} -- [playerName] = { gui, conn }
 
 local function removeESPForPlayer(name)
 if espData[name] then
@@ -210,55 +224,44 @@ gui.Name = 'ESP_' .. player.Name
 gui.ResetOnSpawn = false
 gui.IgnoreGuiInset = true
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-
-pcall(function()
-if syn and syn.protect_gui then
-syn.protect_gui(gui)
-gui.Parent = CoreGui
-elseif gethui then
-gui.Parent = gethui()
-else
-gui.Parent = CoreGui
-end
-end)
-if not gui.Parent then gui.Parent = CoreGui end
+gui.Parent = getGuiParent()
 
 for i = 1, 4 do
- local line = Instance.new('Frame')
- line.Name = 'Line' .. i
- line.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
- line.BorderSizePixel = 0
- line.ZIndex = 10
- line.Parent = gui
- end
+local line = Instance.new('Frame')
+line.Name = 'Line' .. i
+line.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+line.BorderSizePixel = 0
+line.ZIndex = 10
+line.Parent = gui
+end
 
 local nameLabel = Instance.new('TextLabel')
- nameLabel.Name = 'NameLabel'
- nameLabel.BackgroundTransparency = 1
- nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
- nameLabel.TextStrokeTransparency = 0
- nameLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
- nameLabel.Font = Enum.Font.GothamBold
- nameLabel.TextSize = 12
- nameLabel.Text = player.Name
- nameLabel.Size = UDim2.new(0, 200, 0, 16)
- nameLabel.ZIndex = 10
- nameLabel.Parent = gui
+nameLabel.Name = 'NameLabel'
+nameLabel.BackgroundTransparency = 1
+nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+nameLabel.TextStrokeTransparency = 0
+nameLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+nameLabel.Font = Enum.Font.GothamBold
+nameLabel.TextSize = 12
+nameLabel.Text = player.Name
+nameLabel.Size = UDim2.new(0, 200, 0, 16)
+nameLabel.ZIndex = 10
+nameLabel.Parent = gui
 
 local hpBg = Instance.new('Frame')
- hpBg.Name = 'HpBg'
- hpBg.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
- hpBg.BorderSizePixel = 0
- hpBg.ZIndex = 10
- hpBg.Parent = gui
+hpBg.Name = 'HpBg'
+hpBg.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+hpBg.BorderSizePixel = 0
+hpBg.ZIndex = 10
+hpBg.Parent = gui
 
 local hpBar = Instance.new('Frame')
- hpBar.Name = 'HpBar'
- hpBar.BackgroundColor3 = Color3.fromRGB(50, 220, 50)
- hpBar.BorderSizePixel = 0
- hpBar.AnchorPoint = Vector2.new(0, 1)
- hpBar.ZIndex = 11
- hpBar.Parent = hpBg
+hpBar.Name = 'HpBar'
+hpBar.BackgroundColor3 = Color3.fromRGB(50, 220, 50)
+hpBar.BorderSizePixel = 0
+hpBar.AnchorPoint = Vector2.new(0, 1)
+hpBar.ZIndex = 11
+hpBar.Parent = hpBg
 
 return gui
 end
@@ -270,75 +273,77 @@ removeESPForPlayer(player.Name)
 local gui = makeESPGui(player)
 
 local conn = RunService.RenderStepped:Connect(function()
- if not Toggles['PlayerESP'] or not Toggles['PlayerESP'].Value then
- gui.Enabled = false
- return
- end
+if not Toggles['PlayerESP'] or not Toggles['PlayerESP'].Value then
+gui.Enabled = false
+return
+end
 
 local char = player.Character
- local root = char and char:FindFirstChild('HumanoidRootPart')
- local hum = char and char:FindFirstChildOfClass('Humanoid')
+local root = char and char:FindFirstChild('HumanoidRootPart')
+local hum = char and char:FindFirstChildOfClass('Humanoid')
 
 if not root or not hum or hum.Health <= 0 then
- gui.Enabled = false
- return
- end
+gui.Enabled = false
+return
+end
 
+-- 머리 위, 발 아래 스크린 좌표
 local topVP = Camera:WorldToViewportPoint(root.Position + Vector3.new(0, 3.2, 0))
- local botVP = Camera:WorldToViewportPoint(root.Position - Vector3.new(0, 3.2, 0))
+local botVP = Camera:WorldToViewportPoint(root.Position - Vector3.new(0, 3.2, 0))
 
+-- depth > 0 = 카메라 앞에 있음
 if topVP.Z <= 0 then
- gui.Enabled = false
- return
- end
+gui.Enabled = false
+return
+end
 
 gui.Enabled = true
 
 local topX, topY = topVP.X, topVP.Y
- local botX, botY = botVP.X, botVP.Y
+local botX, botY = botVP.X, botVP.Y
 
 local h = math.abs(botY - topY)
- local w = h * 0.55
- local cx = (topX + botX) / 2
+local w = h * 0.55
+local cx = (topX + botX) / 2
 
 local L = cx - w / 2
- local R = cx + w / 2
- local T = topY
- local B = botY
- local thick = 1.5
+local R = cx + w / 2
+local T = topY
+local B = botY
+local thick = 1.5
 
 local color = Options['ESPColor'] and Options['ESPColor'].Value or Color3.fromRGB(255, 50, 50)
 
-local l1 = gui:FindFirstChild('Line1')
- local l2 = gui:FindFirstChild('Line2')
- local l3 = gui:FindFirstChild('Line3')
- local l4 = gui:FindFirstChild('Line4')
+local l1 = gui:FindFirstChild('Line1') -- top
+local l2 = gui:FindFirstChild('Line2') -- bottom
+local l3 = gui:FindFirstChild('Line3') -- left
+local l4 = gui:FindFirstChild('Line4') -- right
 
 if l1 then l1.BackgroundColor3 = color; l1.Position = UDim2.new(0, L, 0, T); l1.Size = UDim2.new(0, w, 0, thick) end
- if l2 then l2.BackgroundColor3 = color; l2.Position = UDim2.new(0, L, 0, B); l2.Size = UDim2.new(0, w, 0, thick) end
- if l3 then l3.BackgroundColor3 = color; l3.Position = UDim2.new(0, L, 0, T); l3.Size = UDim2.new(0, thick, 0, h) end
- if l4 then l4.BackgroundColor3 = color; l4.Position = UDim2.new(0, R, 0, T); l4.Size = UDim2.new(0, thick, 0, h) end
+if l2 then l2.BackgroundColor3 = color; l2.Position = UDim2.new(0, L, 0, B); l2.Size = UDim2.new(0, w, 0, thick) end
+if l3 then l3.BackgroundColor3 = color; l3.Position = UDim2.new(0, L, 0, T); l3.Size = UDim2.new(0, thick, 0, h) end
+if l4 then l4.BackgroundColor3 = color; l4.Position = UDim2.new(0, R, 0, T); l4.Size = UDim2.new(0, thick, 0, h) end
 
 local nl = gui:FindFirstChild('NameLabel')
- if nl then
- nl.Position = UDim2.new(0, L, 0, T - 17)
- nl.Size = UDim2.new(0, w, 0, 16)
- nl.TextXAlignment = Enum.TextXAlignment.Center
- end
+if nl then
+nl.Position = UDim2.new(0, L, 0, T - 17)
+nl.Size = UDim2.new(0, w, 0, 16)
+nl.TextXAlignment = Enum.TextXAlignment.Center
+end
 
 local hpBg = gui:FindFirstChild('HpBg')
- local hpBar = hpBg and hpBg:FindFirstChild('HpBar')
- if hpBg and hpBar then
- local bw = 4
- hpBg.Position = UDim2.new(0, L - bw - 2, 0, T)
- hpBg.Size = UDim2.new(0, bw, 0, h)
+local hpBar = hpBg and hpBg:FindFirstChild('HpBar')
+if hpBg and hpBar then
+local bw = 4
+hpBg.Position = UDim2.new(0, L - bw - 2, 0, T)
+hpBg.Size = UDim2.new(0, bw, 0, h)
 
 local pct = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
- hpBar.BackgroundColor3 = Color3.fromRGB(math.floor(255*(1-pct)), math.floor(255*pct), 0)
- hpBar.Size = UDim2.new(1, 0, pct, 0)
- hpBar.Position = UDim2.new(0, 0, 1, 0)
- end
- end)
+hpBar.BackgroundColor3 = Color3.fromRGB(math.floor(255*(1-pct)), math.floor(255*pct), 0)
+hpBar.Size = UDim2.new(1, 0, pct, 0)
+hpBar.Position = UDim2.new(0, 0, 1, 0)
+end
+end)
 
 espData[player.Name] = { gui = gui, conn = conn }
 end
@@ -354,9 +359,7 @@ else
 removeAllESP()
 end
 end
-})
-
-VisLeft:AddColorPicker('ESPColor', {
+}):AddColorPicker('ESPColor', {
 Title = 'ESP Box Color',
 Default = Color3.fromRGB(255, 50, 50),
 })
@@ -392,118 +395,107 @@ local gui = Instance.new('ScreenGui')
 gui.ResetOnSpawn = false
 gui.IgnoreGuiInset = true
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-
-pcall(function()
-if syn and syn.protect_gui then
-syn.protect_gui(gui)
-gui.Parent = CoreGui
-elseif gethui then
-gui.Parent = gethui()
-else
-gui.Parent = CoreGui
-end
-end)
-if not gui.Parent then gui.Parent = CoreGui end
+gui.Parent = getGuiParent()
 
 for i = 1, 4 do
- local line = Instance.new('Frame')
- line.Name = 'Line' .. i
- line.BackgroundColor3 = Color3.fromRGB(255, 220, 50)
- line.BorderSizePixel = 0
- line.ZIndex = 10
- line.Parent = gui
- end
+local line = Instance.new('Frame')
+line.Name = 'Line' .. i
+line.BackgroundColor3 = Color3.fromRGB(255, 220, 50)
+line.BorderSizePixel = 0
+line.ZIndex = 10
+line.Parent = gui
+end
 
 local nameLabel = Instance.new('TextLabel')
- nameLabel.Name = 'NameLabel'
- nameLabel.BackgroundTransparency = 1
- nameLabel.TextColor3 = Color3.fromRGB(255, 220, 50)
- nameLabel.TextStrokeTransparency = 0
- nameLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
- nameLabel.Font = Enum.Font.GothamBold
- nameLabel.TextSize = 12
- nameLabel.Text = actionText
- nameLabel.Size = UDim2.new(0, 200, 0, 16)
- nameLabel.ZIndex = 10
- nameLabel.Parent = gui
+nameLabel.Name = 'NameLabel'
+nameLabel.BackgroundTransparency = 1
+nameLabel.TextColor3 = Color3.fromRGB(255, 220, 50)
+nameLabel.TextStrokeTransparency = 0
+nameLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+nameLabel.Font = Enum.Font.GothamBold
+nameLabel.TextSize = 12
+nameLabel.Text = actionText
+nameLabel.Size = UDim2.new(0, 200, 0, 16)
+nameLabel.ZIndex = 10
+nameLabel.Parent = gui
 
 local descLabel = Instance.new('TextLabel')
- descLabel.Name = 'DescLabel'
- descLabel.BackgroundTransparency = 1
- descLabel.TextColor3 = Color3.fromRGB(210, 210, 210)
- descLabel.TextStrokeTransparency = 0
- descLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
- descLabel.Font = Enum.Font.Gotham
- descLabel.TextSize = 11
- descLabel.Text = objectText
- descLabel.Size = UDim2.new(0, 200, 0, 14)
- descLabel.ZIndex = 10
- descLabel.Parent = gui
+descLabel.Name = 'DescLabel'
+descLabel.BackgroundTransparency = 1
+descLabel.TextColor3 = Color3.fromRGB(210, 210, 210)
+descLabel.TextStrokeTransparency = 0
+descLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+descLabel.Font = Enum.Font.Gotham
+descLabel.TextSize = 11
+descLabel.Text = objectText
+descLabel.Size = UDim2.new(0, 200, 0, 14)
+descLabel.ZIndex = 10
+descLabel.Parent = gui
 
 local conn = RunService.RenderStepped:Connect(function()
- if not Toggles['ObjectESP'] or not Toggles['ObjectESP'].Value then
- gui.Enabled = false
- return
- end
- if not adornPart or not adornPart.Parent then
- gui:Destroy()
- return
- end
+if not Toggles['ObjectESP'] or not Toggles['ObjectESP'].Value then
+gui.Enabled = false
+return
+end
+if not adornPart or not adornPart.Parent then
+gui:Destroy()
+return
+end
 
 local size = adornPart.Size
- local cf = adornPart.CFrame
- local offsets = {
- Vector3.new( size.X/2, size.Y/2, size.Z/2),
- Vector3.new(-size.X/2, size.Y/2, size.Z/2),
- Vector3.new( size.X/2, -size.Y/2, size.Z/2),
- Vector3.new(-size.X/2, -size.Y/2, size.Z/2),
- Vector3.new( size.X/2, size.Y/2, -size.Z/2),
- Vector3.new(-size.X/2, size.Y/2, -size.Z/2),
- Vector3.new( size.X/2, -size.Y/2, -size.Z/2),
- Vector3.new(-size.X/2, -size.Y/2, -size.Z/2),
- }
+local cf = adornPart.CFrame
+local offsets = {
+Vector3.new( size.X/2, size.Y/2, size.Z/2),
+Vector3.new(-size.X/2, size.Y/2, size.Z/2),
+Vector3.new( size.X/2, -size.Y/2, size.Z/2),
+Vector3.new(-size.X/2, -size.Y/2, size.Z/2),
+Vector3.new( size.X/2, size.Y/2, -size.Z/2),
+Vector3.new(-size.X/2, size.Y/2, -size.Z/2),
+Vector3.new( size.X/2, -size.Y/2, -size.Z/2),
+Vector3.new(-size.X/2, -size.Y/2, -size.Z/2),
+}
 
 local minX, minY = math.huge, math.huge
- local maxX, maxY = -math.huge, -math.huge
- local visible = false
+local maxX, maxY = -math.huge, -math.huge
+local visible = false
 
 for _, offset in ipairs(offsets) do
- local wp = (cf * CFrame.new(offset)).Position
- local vp = Camera:WorldToViewportPoint(wp)
- if vp.Z > 0 then
- visible = true
- if vp.X < minX then minX = vp.X end
- if vp.Y < minY then minY = vp.Y end
- if vp.X > maxX then maxX = vp.X end
- if vp.Y > maxY then maxY = vp.Y end
- end
- end
+local wp = (cf * CFrame.new(offset)).Position
+local vp = Camera:WorldToViewportPoint(wp)
+if vp.Z > 0 then
+visible = true
+if vp.X < minX then minX = vp.X end
+if vp.Y < minY then minY = vp.Y end
+if vp.X > maxX then maxX = vp.X end
+if vp.Y > maxY then maxY = vp.Y end
+end
+end
 
 if not visible then gui.Enabled = false; return end
- gui.Enabled = true
+gui.Enabled = true
 
 local w = maxX - minX
- local h = maxY - minY
- local thick = 1.5
+local h = maxY - minY
+local thick = 1.5
 
 local l1 = gui:FindFirstChild('Line1')
- local l2 = gui:FindFirstChild('Line2')
- local l3 = gui:FindFirstChild('Line3')
- local l4 = gui:FindFirstChild('Line4')
+local l2 = gui:FindFirstChild('Line2')
+local l3 = gui:FindFirstChild('Line3')
+local l4 = gui:FindFirstChild('Line4')
 
 if l1 then l1.Position = UDim2.new(0, minX, 0, minY); l1.Size = UDim2.new(0, w, 0, thick) end
- if l2 then l2.Position = UDim2.new(0, minX, 0, maxY); l2.Size = UDim2.new(0, w, 0, thick) end
- if l3 then l3.Position = UDim2.new(0, minX, 0, minY); l3.Size = UDim2.new(0, thick, 0, h) end
- if l4 then l4.Position = UDim2.new(0, maxX, 0, minY); l4.Size = UDim2.new(0, thick, 0, h) end
+if l2 then l2.Position = UDim2.new(0, minX, 0, maxY); l2.Size = UDim2.new(0, w, 0, thick) end
+if l3 then l3.Position = UDim2.new(0, minX, 0, minY); l3.Size = UDim2.new(0, thick, 0, h) end
+if l4 then l4.Position = UDim2.new(0, maxX, 0, minY); l4.Size = UDim2.new(0, thick, 0, h) end
 
 local nl = gui:FindFirstChild('NameLabel')
- local dl = gui:FindFirstChild('DescLabel')
- if nl then nl.Position = UDim2.new(0, minX, 0, minY - 18) end
- if dl then dl.Position = UDim2.new(0, minX, 0, minY - 32) end
- end)
+local dl = gui:FindFirstChild('DescLabel')
+if nl then nl.Position = UDim2.new(0, minX, 0, minY - 18) end
+if dl then dl.Position = UDim2.new(0, minX, 0, minY - 32) end
+end)
 
 table.insert(objEspConns, conn)
- table.insert(objEspGuis, gui)
+table.insert(objEspGuis, gui)
 end
 
 local function scanObjectESP()
@@ -589,7 +581,6 @@ freecamPart.Size = Vector3.new(1,1,1)
 freecamPart.CFrame = Camera.CFrame
 freecamPart.Parent = Workspace
 Camera.CameraSubject = freecamPart
-
 freecamConn = RunService.RenderStepped:Connect(function(dt)
 local cf = Camera.CFrame
 local mv = Vector3.new(0,0,0)
@@ -630,56 +621,57 @@ local korbloxOn, headlessOn = false, false
 
 local function applyKorbloxHeadless(k, h)
 local char = Player.Character
-if not char then return end
-local hum = char:FindFirstChildOfClass('Humanoid')
+local hum = char and char:FindFirstChildOfClass('Humanoid')
 if not hum then return end
 
 pcall(function()
 local desc = hum:GetAppliedDescription()
 desc.RightLeg = k and 139607718 or 0
 if h then
-desc.Head = 0
+desc.Head = 15093053680
 end
 hum:ApplyDescription(desc)
 end)
 
-if h then
+-- 클라이언트 파츠 직접 보조 적용 (ApplyDescription이 막힌 게임 대비)
 task.defer(function()
 local head = char:FindFirstChild('Head')
 if head then
+head.Transparency = h and 1 or 0
 for _, v in pairs(head:GetChildren()) do
-if v:IsA('SpecialMesh') then v.Scale = Vector3.new(0, 0, 0) end
+if v:IsA('SpecialMesh') then
+v.Scale = h and Vector3.new(0, 0, 0) or Vector3.new(1.25, 1.25, 1.25)
+elseif v:IsA('Decal') then
+v.Transparency = h and 1 or 0
 end
-head.Transparency = 1
-local face = head:FindFirstChild('face')
-if face then face.Transparency = 1 end
+end
+end
+
+local rLower = char:FindFirstChild('RightLowerLeg')
+local rFoot = char:FindFirstChild('RightFoot')
+if rLower and rFoot then
+rLower.Transparency = k and 1 or 0
+rFoot.Transparency = k and 1 or 0
 end
 end)
-end
 end
 
 AvLeft:AddToggle('Korblox', {
 Text = 'Korblox',
 Default = false,
 Tooltip = '코블록스 오른쪽 다리를 클라이언트 측으로 적용합니다.',
-Callback = function(val)
-korbloxOn = val
-applyKorbloxHeadless(korbloxOn, headlessOn)
-end
+Callback = function(val) korbloxOn = val; applyKorbloxHeadless(korbloxOn, headlessOn) end
 })
 
 AvLeft:AddToggle('Headless', {
 Text = 'Headless',
 Default = false,
 Tooltip = '헤드리스를 클라이언트 측으로 적용합니다.',
-Callback = function(val)
-headlessOn = val
-applyKorbloxHeadless(korbloxOn, headlessOn)
-end
+Callback = function(val) headlessOn = val; applyKorbloxHeadless(korbloxOn, headlessOn) end
 })
 
 Player.CharacterAdded:Connect(function()
-task.wait(1.5)
+task.wait(1)
 if korbloxOn or headlessOn then
 applyKorbloxHeadless(korbloxOn, headlessOn)
 end
@@ -697,12 +689,8 @@ AvLeft:AddButton({
 Text = '아바타 적용',
 Tooltip = '입력한 User ID의 아바타를 적용합니다.',
 Callback = function()
-local rawVal = Options['CopyAvatarId'].Value
-local userId = tonumber(rawVal)
-if not userId or userId <= 0 then
-Library:Notify('유효한 User ID를 입력하세요!', 3)
-return
-end
+local userId = tonumber(Options['CopyAvatarId'] and Options['CopyAvatarId'].Value or '')
+if not userId then Library:Notify('유효한 User ID를 입력하세요!', 3); return end
 local char = Player.Character
 local hum = char and char:FindFirstChildOfClass('Humanoid')
 if not hum then return end
@@ -743,6 +731,11 @@ if hum then
 local ok, desc = pcall(function() return Players:GetHumanoidDescriptionFromUserId(Player.UserId) end)
 if ok then pcall(function() hum:ApplyDescription(desc) end) end
 end
+for _, p in pairs(char:GetDescendants()) do
+if (p:IsA('BasePart') or p:IsA('Decal')) and p.Name ~= 'HumanoidRootPart' then
+p.Transparency = 0
+end
+end
 end
 end
 })
@@ -751,31 +744,32 @@ end
 local SetLeft = SettingsTab:AddLeftGroupbox('Keybinds')
 local SetRight = SettingsTab:AddRightGroupbox('Config')
 
-SetLeft:AddKeybind('ToggleUI', {
-Text = 'Toggle UI',
-Default = Enum.KeyCode.RightShift,
-NoUI = false,
-Callback = function() Library:ToggleWindowState() end
+SetLeft:AddLabel('Toggle UI'):AddKeyPicker('ToggleUI', {
+Default = 'RightShift',
+NoUI = true,
+Text = 'Toggle UI'
 })
+Library.ToggleKeybind = Options['ToggleUI']
 
-SetLeft:AddKeybind('NoclipBind', {
+SetLeft:AddLabel('Noclip 토글'):AddKeyPicker('NoclipBind', {
+Default = 'N',
 Text = 'Noclip 토글',
-Default = Enum.KeyCode.N,
 Callback = function() Toggles['Noclip']:SetValue(not Toggles['Noclip'].Value) end
 })
 
-SetLeft:AddKeybind('FreecamBind', {
+SetLeft:AddLabel('Freecam 토글'):AddKeyPicker('FreecamBind', {
+Default = 'F',
 Text = 'Freecam 토글',
-Default = Enum.KeyCode.F,
 Callback = function() Toggles['Freecam']:SetValue(not Toggles['Freecam'].Value) end
 })
 
-SetLeft:AddKeybind('ESPBind', {
+SetLeft:AddLabel('ESP 토글'):AddKeyPicker('ESPBind', {
+Default = 'Insert',
 Text = 'ESP 토글',
-Default = Enum.KeyCode.Insert,
 Callback = function() Toggles['PlayerESP']:SetValue(not Toggles['PlayerESP'].Value) end
 })
 
+pcall(function()
 SaveManager:SetLibrary(Library)
 ThemeManager:SetLibrary(Library)
 SaveManager:IgnoreThemeSettings()
@@ -783,5 +777,6 @@ SaveManager:SetIgnoreList({ 'ToggleUI', 'NoclipBind', 'FreecamBind', 'ESPBind' }
 SaveManager:BuildConfigSection(SetRight)
 ThemeManager:BuildThemeSection(SetRight)
 SaveManager:LoadAutoloadConfig()
+end)
 
 Library:Notify('Naberius 로드 완료!', 3)
