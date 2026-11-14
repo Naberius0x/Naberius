@@ -1,4 +1,4 @@
--- Naberius Hub (Ultimate Visual & ESP Fixed Version)
+-- Naberius Hub (Full Integrated & Visual Fixed Version)
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local VirtualUser = game:GetService("VirtualUser")
@@ -17,8 +17,21 @@ local Library = loadstring(game:HttpGet(repo .. 'Library.lua'))()
 local ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))()
 local SaveManager = loadstring(game:HttpGet(repo .. 'addons/SaveManager.lua'))()
 
-local Toggles = Library.Toggles
-local Options = Library.Options
+-- Library.Toggles / Library.Options 가 없는 버전도 지원 (getgenv 폴백)
+local Toggles = Library.Toggles or getgenv().Toggles
+local Options = Library.Options or getgenv().Options
+
+-- 옵션/토글 값을 안전하게 읽는 도우미 함수 (nil 에러로 스크립트가 중간에 멈추는 것을 방지)
+local function getOpt(name, default)
+    local o = Options and Options[name]
+    if o and o.Value ~= nil then return o.Value end
+    return default
+end
+
+local function getTog(name)
+    local t = Toggles and Toggles[name]
+    return (t and t.Value) and true or false
+end
 
 -- CoreGui 보호 및 안전 부모 설정 함수 (ESP가 안 뜨던 원인 원천 차단)
 local function getGuiParent()
@@ -57,6 +70,7 @@ local isObjectEspRunning = false
 local originalTransparencies = {}
 local objectEspContainer = {}
 local espData = {}
+local espCharConns = {}
 
 -- 효과 관련 저장용 변수
 local customBloomEffect = nil
@@ -74,6 +88,7 @@ local keyAfkCoroutine = nil
 -- FPS Boost 상태 및 원래 설정을 저장하기 위한 테이블
 local fpsBoostConnection = nil
 local originalFpsSettings = {}
+local fpsDisabledEffects = {}
 
 -- 노클립 상태 관리를 위한 변수
 local noclipConnection = nil
@@ -153,6 +168,7 @@ local FpsBox = Tabs.Main:AddLeftGroupbox('FPS Boost')
 local TpBox = Tabs.Main:AddLeftGroupbox('TELEPORT')
 local MovementBox = Tabs.Main:AddRightGroupbox('Movement')
 
+-- ANTI AFK 기능들
 GroupBox:AddToggle('AntiAfkToggle', {
     Text = 'ANTI AFK(JUMP)',
     Default = false,
@@ -198,6 +214,7 @@ GroupBox:AddToggle('BypassToggle', {
     Callback = function(Value) useAntiCheatBypass = Value end
 })
 
+-- FPS Boost 기능
 FpsBox:AddToggle('FpsBoostToggle', {
     Text = 'FPS Boost (Unlock)',
     Default = false,
@@ -224,7 +241,10 @@ FpsBox:AddToggle('FpsBoostToggle', {
                     desc.Visible = false
                 elseif desc:IsA("Texture") or desc:IsA("Decal") then
                     desc.Texture = ""
-                elseif desc:IsA("MeshPart") or (desc:IsA("BasePart") and not desc.Parent:FindFirstChildOfClass("Humanoid")) then
+                elseif desc:IsA("MeshPart") then
+                    desc.Material = Enum.Material.SmoothPlastic
+                    desc.Reflectance = 0
+                elseif desc:IsA("BasePart") and not desc.Parent:FindFirstChildOfClass("Humanoid") then
                     desc.Material = Enum.Material.SmoothPlastic
                     desc.Reflectance = 0
                 end
@@ -236,9 +256,22 @@ FpsBox:AddToggle('FpsBoostToggle', {
                     desc.Visible = false
                 elseif desc:IsA("Texture") or desc:IsA("Decal") then
                     desc.Texture = ""
-                elseif desc:IsA("MeshPart") or (desc:IsA("BasePart") and not desc.Parent:FindFirstChildOfClass("Humanoid")) then
+                elseif desc:IsA("MeshPart") then
                     desc.Material = Enum.Material.SmoothPlastic
                     desc.Reflectance = 0
+                elseif desc:IsA("BasePart") and not desc.Parent:FindFirstChildOfClass("Humanoid") then
+                    desc.Material = Enum.Material.SmoothPlastic
+                    desc.Reflectance = 0
+                end
+            end
+            -- 게임 자체 후처리 이펙트 비활성화 (Naberius 이펙트는 건드리지 않음)
+            fpsDisabledEffects = {}
+            for _, effect in ipairs(Lighting:GetChildren()) do
+                if effect:IsA("PostEffect") or effect:IsA("BloomEffect") or effect:IsA("BlurEffect") or effect:IsA("ColorCorrectionEffect") or effect:IsA("SunRaysEffect") then
+                    if effect.Name:sub(1, 9) ~= "Naberius_" and effect.Enabled then
+                        table.insert(fpsDisabledEffects, effect)
+                        effect.Enabled = false
+                    end
                 end
             end
         else
@@ -246,20 +279,25 @@ FpsBox:AddToggle('FpsBoostToggle', {
             if fpsBoostConnection then fpsBoostConnection:Disconnect(); fpsBoostConnection = nil end
             if originalFpsSettings.GlobalShadows ~= nil then Lighting.GlobalShadows = originalFpsSettings.GlobalShadows end
             if originalFpsSettings.OutdoorAmbient ~= nil then Lighting.OutdoorAmbient = originalFpsSettings.OutdoorAmbient end
-            if Terrain and originalFpsSettings.WaterWaveSize then
-                Terrain.WaterWaveSize = originalFpsSettings.WaterWaveSize
-                Terrain.WaterWaveSpeed = originalFpsSettings.WaterWaveSpeed
-                Terrain.WaterReflectance = originalFpsSettings.WaterReflectance
-                Terrain.WaterTransparency = originalFpsSettings.WaterTransparency
+            if Terrain then
+                if originalFpsSettings.WaterWaveSize then Terrain.WaterWaveSize = originalFpsSettings.WaterWaveSize end
+                if originalFpsSettings.WaterWaveSpeed then Terrain.WaterWaveSpeed = originalFpsSettings.WaterWaveSpeed end
+                if originalFpsSettings.WaterReflectance then Terrain.WaterReflectance = originalFpsSettings.WaterReflectance end
+                if originalFpsSettings.WaterTransparency then Terrain.WaterTransparency = originalFpsSettings.WaterTransparency end
             end
+            for _, effect in ipairs(fpsDisabledEffects) do
+                pcall(function() effect.Enabled = true end)
+            end
+            fpsDisabledEffects = {}
         end
     end
 })
 
+-- TELEPORT 기능들
 TpBox:AddToggle('ClickTpToggle', {
     Text = 'Enable Ctrl + Click TP',
     Default = false,
-    Tooltip = 'Ctrl 누른 채 마우스 클릭 시 해당 위치로 이동합니다.',
+    Tooltip = '활성화 후 [왼쪽/오른쪽 Ctrl] 키를 누른 상태에서 마우스로 땅이나 벽을 클릭하면 해당 위치로 이동합니다.',
     Callback = function(Value) isClickTpEnabled = Value end
 })
 
@@ -277,10 +315,11 @@ UserInputService.InputBegan:Connect(function(input, gp)
     end
 end)
 
+-- Movement 기능들
 MovementBox:AddToggle('NoclipToggle', {
     Text = 'Enable Noclip',
     Default = false,
-    Tooltip = '벽과 바닥을 통과합니다.',
+    Tooltip = '활성화 시 매 프레임 충돌을 해제하여 벽을 관통합니다.',
     Callback = function(Value)
         if Value then
             saveOriginalCollisions(LocalPlayer.Character)
@@ -296,9 +335,15 @@ MovementBox:AddToggle('NoclipToggle', {
             if LocalPlayer.Character then
                 for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
                     if part:IsA("BasePart") then
-                        part.CanCollide = originalCollisions[part] ~= nil and originalCollisions[part] or true
+                        if originalCollisions[part] ~= nil then
+                            part.CanCollide = originalCollisions[part]
+                        else
+                            part.CanCollide = true
+                        end
                     end
                 end
+                local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                if hum then hum:ChangeState(Enum.HumanoidStateType.Running) end
             end
         end
     end
@@ -326,6 +371,10 @@ local function removeAllESP()
     for name, _ in pairs(espData) do
         removeESPForPlayer(name)
     end
+    for name, c in pairs(espCharConns) do
+        pcall(function() c:Disconnect() end)
+        espCharConns[name] = nil
+    end
 end
 
 local function startESP(player)
@@ -341,11 +390,15 @@ local function startESP(player)
 
         removeESPForPlayer(player.Name)
 
+        local initialColor = getOpt('ESPColor', Color3.fromRGB(255, 0, 0))
+
         -- 1. 캐릭터 3D 외곽선 (Highlight) - Adornee를 캐릭터 모델 전체로 지정하여 정확하게 감쌈
         local highlight = Instance.new('Highlight')
         highlight.Name = 'Naberius_Highlight'
         highlight.Adornee = char
+        highlight.FillColor = initialColor
         highlight.FillTransparency = 0.75
+        highlight.OutlineColor = initialColor
         highlight.OutlineTransparency = 0
         highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
         highlight.Parent = getGuiParent()
@@ -354,7 +407,7 @@ local function startESP(player)
         local billboard = Instance.new('BillboardGui')
         billboard.Name = 'Naberius_Billboard'
         billboard.Adornee = root
-        billboard.Size = UDim2.new(4, 0, 5.5, 0)
+        billboard.Size = UDim2.new(4.5, 0, 6, 0)
         billboard.StudsOffset = Vector3.new(0, 0.5, 0)
         billboard.AlwaysOnTop = true
         billboard.Parent = getGuiParent()
@@ -376,8 +429,8 @@ local function startESP(player)
         -- 왼쪽 옆면 체력바 배경
         local hpBg = Instance.new('Frame')
         hpBg.Name = 'HpBg'
-        hpBg.Size = UDim2.new(0.08, 0, 0.9, 0)
-        hpBg.Position = UDim2.new(-0.15, 0, 0.05, 0)
+        hpBg.Size = UDim2.new(0.08, 0, 1, 0)
+        hpBg.Position = UDim2.new(-0.14, 0, 0, 0)
         hpBg.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
         hpBg.BorderSizePixel = 0
         hpBg.Parent = billboard
@@ -403,9 +456,10 @@ local function startESP(player)
             highlight.Enabled = true
             billboard.Enabled = true
 
-            local col = Options['ESPColor'] and Options['ESPColor'].Value or Color3.fromRGB(255, 0, 0)
-            highlight.FillColor = col
-            highlight.OutlineColor = col
+            -- 컬러피커 색상을 매 프레임 읽어서 테두리/채움에 즉시 반영
+            local currentColor = getOpt('ESPColor', Color3.fromRGB(255, 0, 0))
+            highlight.FillColor = currentColor
+            highlight.OutlineColor = currentColor
 
             local pct = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
             hpBar.Size = UDim2.new(1, 0, pct, 0)
@@ -423,7 +477,11 @@ local function startESP(player)
         task.spawn(setupCharacterESP, player.Character)
     end
 
-    player.CharacterAdded:Connect(function(newChar)
+    -- 중복 연결 방지: 기존 연결을 끊고 새로 연결
+    if espCharConns[player.Name] then
+        pcall(function() espCharConns[player.Name]:Disconnect() end)
+    end
+    espCharConns[player.Name] = player.CharacterAdded:Connect(function(newChar)
         task.wait(0.5)
         if isEspRunning then
             setupCharacterESP(newChar)
@@ -434,7 +492,7 @@ end
 EspBox:AddToggle('EspToggle', {
     Text = 'Enable ESP',
     Default = false,
-    Tooltip = '플레이어의 3D 외곽선 테두리, 이름, 체력바를 투시합니다.',
+    Tooltip = '벽 뒤에 있는 플레이어의 외곽선 테두리, 이름, 체력바를 투시합니다.',
     Callback = function(Value)
         isEspRunning = Value
         if Value then
@@ -451,17 +509,23 @@ EspBox:AddToggle('EspToggle', {
 })
 
 Players.PlayerAdded:Connect(function(player)
-    startESP(player)
+    if isEspRunning then
+        startESP(player)
+    end
 end)
 
 Players.PlayerRemoving:Connect(function(player)
     removeESPForPlayer(player.Name)
+    if espCharConns[player.Name] then
+        pcall(function() espCharConns[player.Name]:Disconnect() end)
+        espCharConns[player.Name] = nil
+    end
 end)
 
 XrayBox:AddToggle('XrayToggle', {
     Text = 'Enable X-Ray',
     Default = false,
-    Tooltip = '맵의 벽을 투명하게 만듭니다.',
+    Tooltip = '맵의 두꺼운 벽과 장애물을 투명하게 만듭니다.',
     Callback = function(Value)
         isXrayRunning = Value
         for _, desc in ipairs(Workspace:GetDescendants()) do
@@ -480,7 +544,7 @@ XrayBox:AddToggle('XrayToggle', {
 XrayBox:AddToggle('ObjectEspToggle', {
     Text = 'Enable Object ESP',
     Default = false,
-    Tooltip = 'E키 상호작용 오브젝트 투시',
+    Tooltip = 'E키로 상호작용 가능한 모든 오브젝트의 정보와 텍스트를 투시합니다.',
     Callback = function(Value)
         isObjectEspRunning = Value
         if not Value then
@@ -521,7 +585,12 @@ XrayBox:AddToggle('ObjectEspToggle', {
                                     tl.TextStrokeColor3 = Color3.new(0, 0, 0)
                                     tl.Font = Enum.Font.SourceSansBold
                                     tl.TextSize = 14
-                                    tl.Text = string.format("[%s] %s\n(%s)", desc.KeyboardKeyCode.Name or "E", desc.ObjectText ~= "" and desc.ObjectText or part.Name, desc.ActionText ~= "" and desc.ActionText or "상호작용")
+                                    
+                                    local keyText = desc.KeyboardKeyCode.Name or "E"
+                                    local objectName = desc.ObjectText ~= "" and desc.ObjectText or part.Name
+                                    local actionName = desc.ActionText ~= "" and desc.ActionText or "상호작용"
+                                    
+                                    tl.Text = string.format("[%s] %s\n(%s)", keyText, objectName, actionName)
                                     
                                     table.insert(objectEspContainer, h)
                                     table.insert(objectEspContainer, bg)
@@ -539,7 +608,7 @@ XrayBox:AddToggle('ObjectEspToggle', {
 FreecamBox:AddToggle('FreecamToggle', {
     Text = 'Enable Freecam',
     Default = false,
-    Tooltip = '자유 카메라 이동',
+    Tooltip = '클릭하지 않아도 마우스 움직임에 따라 즉시 회전하며 모든 움직임이 부드럽게 보간됩니다.',
     Callback = function(Value)
         isFreecamRunning = Value
         local camera = Workspace.CurrentCamera
@@ -557,8 +626,9 @@ FreecamBox:AddToggle('FreecamToggle', {
             
             freecamConnection = RunService.RenderStepped:Connect(function(dt)
                 local delta = UserInputService:GetMouseDelta()
-                targetYaw = targetYaw - (delta.X * 0.002)
-                targetPitch = math.clamp(targetPitch - (delta.Y * 0.002), math.rad(-88), math.rad(88))
+                local sensitivity = 0.002
+                targetYaw = targetYaw - (delta.X * sensitivity)
+                targetPitch = math.clamp(targetPitch - (delta.Y * sensitivity), math.rad(-88), math.rad(88))
                 local lerpFactor = math.clamp(1 - math.exp(-15 * dt), 0, 1)
                 cameraYaw = cameraYaw + (targetYaw - cameraYaw) * lerpFactor
                 cameraPitch = cameraPitch + (targetPitch - cameraPitch) * lerpFactor
@@ -576,6 +646,10 @@ FreecamBox:AddToggle('FreecamToggle', {
                 freecamFov = freecamFov + (targetFov - freecamFov) * lerpFactor
                 camera.CFrame = CFrame.new(camPosition) * currentRotCFrame
                 camera.FieldOfView = freecamFov
+
+                if UserInputService.MouseBehavior ~= Enum.MouseBehavior.LockCurrentPosition then
+                    UserInputService.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
+                end
             end)
         else
             if freecamConnection then freecamConnection:Disconnect(); freecamConnection = nil end
@@ -589,7 +663,7 @@ FreecamBox:AddToggle('FreecamToggle', {
     end
 })
 
-UserInputService.InputChanged:Connect(function(input)
+UserInputService.InputChanged:Connect(function(input, gp)
     if not isFreecamRunning then return end
     if input.UserInputType == Enum.UserInputType.MouseWheel then
         targetFov = math.clamp(targetFov + (input.Position.Z > 0 and -6 or 6), 10, 120)
@@ -600,7 +674,7 @@ NameBox:AddInput('NameChangeInput', {
     Text = 'Client Fake Nickname',
     Default = '',
     Finished = true,
-    Tooltip = '머리 위 닉네임 변조',
+    Tooltip = '플레이어 목록 및 머리 위 이름을 입력한 이름으로 변조합니다.',
     Callback = function(Value) customName = Value end
 })
 
@@ -614,23 +688,202 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
+---------------------------------------------------------
+-- [Visuals & Shaders] 이펙트 엔진
+-- 토글/색상/강도 값을 매 프레임 읽어서 Lighting에 반영합니다.
+-- (게임이 Ambient 등을 덮어써도 계속 유지되고, 컬러피커/슬라이더가 즉시 적용됨)
+---------------------------------------------------------
+local fx = {}
+
+local function getEffect(key, class)
+    local e = fx[key]
+    if not e or e.Parent ~= Lighting then
+        if e then pcall(function() e:Destroy() end) end
+        e = Instance.new(class)
+        e.Name = 'Naberius_' .. key
+        e.Parent = Lighting
+        fx[key] = e
+    end
+    return e
+end
+
+local function clearEffect(key)
+    if fx[key] then
+        pcall(function() fx[key]:Destroy() end)
+        fx[key] = nil
+    end
+end
+
+-- 쉐이더 프리셋 (색감 / 블룸 / 햇살 / 심도)
+local ShaderPresets = {
+    ['Romantic Cinematic'] = {
+        Tint = Color3.fromRGB(255, 232, 210), Brightness = 0.04, Contrast = 0.24, Saturation = 0.28, Exposure = 0.15,
+        BloomIntensity = 0.55, BloomSize = 32, BloomThreshold = 0.82,
+        SunRays = 0.14, SunSpread = 0.85,
+        DofFar = 0.14, DofFocus = 90, DofRadius = 70
+    },
+    ['Cyber Night'] = {
+        Tint = Color3.fromRGB(205, 185, 255), Brightness = -0.02, Contrast = 0.32, Saturation = 0.45, Exposure = 0.05,
+        BloomIntensity = 0.85, BloomSize = 40, BloomThreshold = 0.7,
+        SunRays = 0.08, SunSpread = 0.7,
+        DofFar = 0.18, DofFocus = 80, DofRadius = 60
+    },
+    ['Fresh Dawn'] = {
+        Tint = Color3.fromRGB(222, 244, 255), Brightness = 0.05, Contrast = 0.18, Saturation = 0.32, Exposure = 0.2,
+        BloomIntensity = 0.45, BloomSize = 28, BloomThreshold = 0.88,
+        SunRays = 0.2, SunSpread = 0.95,
+        DofFar = 0.1, DofFocus = 100, DofRadius = 80
+    }
+}
+
+local neonWasOn = false
+local shaderWasOn = false
+local neonOriginal = {}
+local atmoOriginal = nil
+local originalExposure = Lighting.ExposureCompensation
+
+local function updateVisuals()
+    ---------------- Bloom (광채) ----------------
+    if getTog('BloomToggle') then
+        local v = getOpt('BloomIntensity', 5)
+        local b = getEffect('Bloom', 'BloomEffect')
+        b.Enabled = true
+        b.Intensity = v * 0.3                          -- 0.3 ~ 3.0
+        b.Size = 12 + v * 6                            -- 18 ~ 72
+        b.Threshold = math.max(0.25, 1.0 - v * 0.07)   -- 값이 클수록 더 넓게 번짐
+        customBloomEffect = b
+
+        -- BloomEffect는 색상 속성이 없어서 틴트용 ColorCorrection으로 광채 색을 입힘
+        local col = getOpt('BloomColor', Color3.new(1, 1, 1))
+        local t = getEffect('BloomTint', 'ColorCorrectionEffect')
+        t.Enabled = true
+        t.TintColor = Color3.new(1, 1, 1):Lerp(col, 0.6)
+    else
+        clearEffect('Bloom')
+        clearEffect('BloomTint')
+        customBloomEffect = nil
+    end
+
+    ---------------- Neon Environment (네온 조명) ----------------
+    local neonOn = getTog('NeonLightingToggle')
+    if neonOn then
+        if not neonWasOn then
+            neonOriginal = {
+                Ambient = Lighting.Ambient,
+                OutdoorAmbient = Lighting.OutdoorAmbient,
+                ColorShift_Top = Lighting.ColorShift_Top,
+                ColorShift_Bottom = Lighting.ColorShift_Bottom
+            }
+            originalLightingSettings.Ambient = Lighting.Ambient
+            originalLightingSettings.OutdoorAmbient = Lighting.OutdoorAmbient
+            neonAtmosphere = Lighting:FindFirstChildOfClass('Atmosphere')
+            if neonAtmosphere then
+                atmoOriginal = { Color = neonAtmosphere.Color, Decay = neonAtmosphere.Decay }
+            else
+                atmoOriginal = nil
+            end
+        end
+
+        local col = getOpt('NeonColor', Color3.fromRGB(120, 60, 200))
+        local mult = getOpt('NeonIntensity', 5) / 10   -- 0.1 ~ 1.0
+
+        local amb = Color3.new(col.R * mult, col.G * mult, col.B * mult)
+        Lighting.Ambient = amb
+        Lighting.OutdoorAmbient = amb
+        Lighting.ColorShift_Top = amb
+        Lighting.ColorShift_Bottom = Color3.new(col.R * mult * 0.6, col.G * mult * 0.6, col.B * mult * 0.6)
+
+        -- 화면 전체 색조 (맵이 밝아도 네온 색이 확실히 보이도록)
+        local tint = getEffect('NeonTint', 'ColorCorrectionEffect')
+        tint.Enabled = true
+        tint.TintColor = Color3.new(1, 1, 1):Lerp(col, mult * 0.55)
+        tint.Saturation = mult * 0.35
+        tint.Contrast = mult * 0.1
+
+        if neonAtmosphere and neonAtmosphere.Parent then
+            neonAtmosphere.Color = Color3.new(1, 1, 1):Lerp(col, mult * 0.7)
+            neonAtmosphere.Decay = col:Lerp(Color3.new(0, 0, 0), 1 - mult * 0.6)
+        end
+    elseif neonWasOn then
+        Lighting.Ambient = neonOriginal.Ambient or originalLightingSettings.Ambient
+        Lighting.OutdoorAmbient = neonOriginal.OutdoorAmbient or originalLightingSettings.OutdoorAmbient
+        if neonOriginal.ColorShift_Top then Lighting.ColorShift_Top = neonOriginal.ColorShift_Top end
+        if neonOriginal.ColorShift_Bottom then Lighting.ColorShift_Bottom = neonOriginal.ColorShift_Bottom end
+        if neonAtmosphere and neonAtmosphere.Parent and atmoOriginal then
+            neonAtmosphere.Color = atmoOriginal.Color
+            neonAtmosphere.Decay = atmoOriginal.Decay
+        end
+        clearEffect('NeonTint')
+    end
+    neonWasOn = neonOn
+
+    ---------------- Custom Shader (시네마틱 쉐이더) ----------------
+    local shaderOn = getTog('ShaderToggle')
+    if shaderOn then
+        if not shaderWasOn then
+            originalExposure = Lighting.ExposureCompensation
+        end
+        local p = ShaderPresets[getOpt('ShaderPreset', 'Romantic Cinematic')] or ShaderPresets['Romantic Cinematic']
+
+        local cc = getEffect('ShaderCC', 'ColorCorrectionEffect')
+        cc.Enabled = true
+        cc.Brightness = p.Brightness
+        cc.Contrast = p.Contrast
+        cc.Saturation = p.Saturation
+        cc.TintColor = p.Tint
+        customColorCorrEffect = cc
+
+        local sb = getEffect('ShaderBloom', 'BloomEffect')
+        sb.Enabled = true
+        sb.Intensity = p.BloomIntensity
+        sb.Size = p.BloomSize
+        sb.Threshold = p.BloomThreshold
+
+        local sr = getEffect('ShaderSunRays', 'SunRaysEffect')
+        sr.Enabled = true
+        sr.Intensity = p.SunRays
+        sr.Spread = p.SunSpread
+
+        local dof = getEffect('ShaderDof', 'DepthOfFieldEffect')
+        dof.Enabled = true
+        dof.FarIntensity = p.DofFar
+        dof.NearIntensity = 0
+        dof.FocusDistance = p.DofFocus
+        dof.InFocusRadius = p.DofRadius
+
+        Lighting.ExposureCompensation = p.Exposure
+    else
+        if shaderWasOn then
+            Lighting.ExposureCompensation = originalExposure
+        end
+        clearEffect('ShaderCC')
+        clearEffect('ShaderBloom')
+        clearEffect('ShaderSunRays')
+        clearEffect('ShaderDof')
+        customColorCorrEffect = nil
+    end
+    shaderWasOn = shaderOn
+end
+
+RunService.RenderStepped:Connect(function()
+    pcall(updateVisuals)
+end)
+
 -- 낭만적이고 선명한 고품질 시네마틱 쉐이더
 VisualsEffectsBox:AddToggle('ShaderToggle', {
     Text = 'Custom Shader (낭만 시네마틱)',
     Default = false,
-    Tooltip = '화면을 감성적이고 선명한 고품질 쉐이더 색감으로 보정합니다.',
-    Callback = function(val)
-        if val then
-            customColorCorrEffect = Instance.new("ColorCorrectionEffect")
-            customColorCorrEffect.Brightness = 0.08
-            customColorCorrEffect.Contrast = 0.25
-            customColorCorrEffect.Saturation = 0.2
-            customColorCorrEffect.TintColor = Color3.fromRGB(255, 240, 220)
-            customColorCorrEffect.Parent = Lighting
-        else
-            if customColorCorrEffect then customColorCorrEffect:Destroy(); customColorCorrEffect = nil end
-        end
-    end
+    Tooltip = '색감 보정 + 소프트 블룸 + 햇살 + 원거리 심도를 한 번에 적용하는 고품질 쉐이더입니다.',
+    Callback = function(val) end
+})
+
+VisualsEffectsBox:AddDropdown('ShaderPreset', {
+    Values = { 'Romantic Cinematic', 'Cyber Night', 'Fresh Dawn' },
+    Default = 1,
+    Multi = false,
+    Text = 'Shader Preset (프리셋)',
+    Tooltip = '쉐이더 분위기를 선택합니다.',
+    Callback = function(val) end
 })
 
 -- 광채(Bloom) 효과 (강도 1~10 및 색상 조절 추가)
@@ -638,18 +891,7 @@ VisualsEffectsBox:AddToggle('BloomToggle', {
     Text = 'Custom Bloom (광채 효과)',
     Default = false,
     Tooltip = '화면의 밝은 부분에 낭만적인 광채 효과를 부여합니다.',
-    Callback = function(val)
-        if val then
-            customBloomEffect = Instance.new("BloomEffect")
-            local intensityVal = Options['BloomIntensity'] and Options['BloomIntensity'].Value or 5
-            customBloomEffect.Intensity = (intensityVal / 10) * 1.2
-            customBloomEffect.Size = 32
-            customBloomEffect.Threshold = 0.6
-            customBloomEffect.Parent = Lighting
-        else
-            if customBloomEffect then customBloomEffect:Destroy(); customBloomEffect = nil end
-        end
-    end
+    Callback = function(val) end
 }):AddColorPicker('BloomColor', {
     Title = 'Bloom Color',
     Default = Color3.fromRGB(255, 255, 255),
@@ -659,11 +901,7 @@ VisualsEffectsBox:AddSlider('BloomIntensity', {
     Text = 'Bloom Intensity (강도)',
     Default = 5, Min = 1, Max = 10, Rounding = 0,
     Tooltip = '광채 효과의 세기를 1부터 10까지 조절합니다.',
-    Callback = function(val)
-        if customBloomEffect then
-            customBloomEffect.Intensity = (val / 10) * 1.2
-        end
-    end
+    Callback = function(val) end
 })
 
 -- 네온 조명 효과 (강도 1~10 및 색상 조절 추가)
@@ -671,20 +909,7 @@ VisualsEffectsBox:AddToggle('NeonLightingToggle', {
     Text = 'Neon Environment (네온 조명)',
     Default = false,
     Tooltip = '맵 전체에 화려하고 낭만적인 네온 색감을 적용합니다.',
-    Callback = function(val)
-        if val then
-            originalLightingSettings.Ambient = Lighting.Ambient
-            originalLightingSettings.OutdoorAmbient = Lighting.OutdoorAmbient
-            local neonCol = Options['NeonColor'] and Options['NeonColor'].Value or Color3.fromRGB(120, 60, 200)
-            local neonInt = Options['NeonIntensity'] and Options['NeonIntensity'].Value or 5
-            local mult = (neonInt / 10) * 0.8
-            Lighting.Ambient = Color3.new(neonCol.R * mult, neonCol.G * mult, neonCol.B * mult)
-            Lighting.OutdoorAmbient = Lighting.Ambient
-        else
-            Lighting.Ambient = originalLightingSettings.Ambient
-            Lighting.OutdoorAmbient = originalLightingSettings.OutdoorAmbient
-        end
-    end
+    Callback = function(val) end
 }):AddColorPicker('NeonColor', {
     Title = 'Neon Color',
     Default = Color3.fromRGB(120, 60, 200),
@@ -694,61 +919,71 @@ VisualsEffectsBox:AddSlider('NeonIntensity', {
     Text = 'Neon Intensity (강도)',
     Default = 5, Min = 1, Max = 10, Rounding = 0,
     Tooltip = '네온 조명의 세기를 1부터 10까지 조절합니다.',
-    Callback = function(val)
-        if Toggles['NeonLightingToggle'] and Toggles['NeonLightingToggle'].Value then
-            local neonCol = Options['NeonColor'] and Options['NeonColor'].Value or Color3.fromRGB(120, 60, 200)
-            local mult = (val / 10) * 0.8
-            Lighting.Ambient = Color3.new(neonCol.R * mult, neonCol.G * mult, neonCol.B * mult)
-            Lighting.OutdoorAmbient = Lighting.Ambient
-        end
-    end
+    Callback = function(val) end
 })
 
--- 실시간 네온 컬러 피커 연동
-Options['NeonColor']:OnChanged(function()
-    if Toggles['NeonLightingToggle'] and Toggles['NeonLightingToggle'].Value then
-        local neonCol = Options['NeonColor'].Value
-        local neonInt = Options['NeonIntensity'] and Options['NeonIntensity'].Value or 5
-        local mult = (neonInt / 10) * 0.8
-        Lighting.Ambient = Color3.new(neonCol.R * mult, neonCol.G * mult, neonCol.B * mult)
-        Lighting.OutdoorAmbient = Lighting.Ambient
-    end
-end)
+-- 실시간 컬러 피커 연동 (값이 바뀌면 즉시 반영)
+if Options and Options['NeonColor'] then
+    Options['NeonColor']:OnChanged(function() pcall(updateVisuals) end)
+end
+if Options and Options['BloomColor'] then
+    Options['BloomColor']:OnChanged(function() pcall(updateVisuals) end)
+end
+if Options and Options['ESPColor'] then
+    Options['ESPColor']:OnChanged(function()
+        local c = Options['ESPColor'].Value
+        for _, d in pairs(espData) do
+            pcall(function()
+                d.highlight.FillColor = c
+                d.highlight.OutlineColor = c
+            end)
+        end
+    end)
+end
 
 ---------------------------------------------------------
 -- [Avatar 탭]
 ---------------------------------------------------------
 local AvatarBox = Tabs.Avatar:AddLeftGroupbox('Avatar & Customizer')
 
-AvatarBox:AddButton('Apply Korblox', function()
+-- 현재 캐릭터의 Humanoid를 안전하게 가져오는 함수
+local function getHumanoid()
     local char = LocalPlayer.Character
-    if not char then return end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if hum and hum.RigType == Enum.HumanoidRigType.R15 then
-        local desc = hum:GetAppliedDescription()
-        desc.RightLeg = 139607718
-        hum:ApplyDescription(desc)
-        Library:Notify('코블록스 다리 적용 완료!')
+    if not char then return nil, nil end
+    return char:FindFirstChildOfClass("Humanoid"), char
+end
+
+AvatarBox:AddButton('Apply Korblox', function()
+    local hum, char = getHumanoid()
+    if not hum then Library:Notify('캐릭터를 찾지 못했습니다.'); return end
+    if hum.RigType == Enum.HumanoidRigType.R15 then
+        local ok, err = pcall(function()
+            local desc = hum:GetAppliedDescription()
+            desc.RightLeg = 139607718
+            hum:ApplyDescription(desc)
+        end)
+        Library:Notify(ok and '코블록스 다리가 적용되었습니다!' or ('실패: ' .. tostring(err)))
     else
         Library:Notify('R15 캐릭터에서만 지원됩니다.')
     end
 end)
 
 AvatarBox:AddButton('Apply Headless', function()
-    local char = LocalPlayer.Character
-    if not char then return end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if hum and hum.RigType == Enum.HumanoidRigType.R15 then
-        local desc = hum:GetAppliedDescription()
-        desc.Head = 15093053680
-        hum:ApplyDescription(desc)
-        Library:Notify('헤드리스 적용 완료!')
+    local hum, char = getHumanoid()
+    if not hum then Library:Notify('캐릭터를 찾지 못했습니다.'); return end
+    if hum.RigType == Enum.HumanoidRigType.R15 then
+        local ok, err = pcall(function()
+            local desc = hum:GetAppliedDescription()
+            desc.Head = 134082579
+            hum:ApplyDescription(desc)
+        end)
+        Library:Notify(ok and '헤드리스가 적용되었습니다!' or ('실패: ' .. tostring(err)))
     else
         if char:FindFirstChild("Head") then
             char.Head.Transparency = 1
             if char.Head:FindFirstChild("face") then char.Head.face:Destroy() end
         end
-        Library:Notify('R6 헤드리스(투명화) 완료!')
+        Library:Notify('R6 헤드리스(투명화)가 적용되었습니다!')
     end
 end)
 
@@ -757,25 +992,28 @@ AvatarBox:AddInput('CustomItemIdInput', {
     Default = '',
     Numeric = true,
     Finished = false,
-    Tooltip = '장착할 아이템 고유 숫자 ID 입력',
+    Tooltip = '장착하고 싶은 아이템의 고유 숫자 ID를 입력하세요.',
     Placeholder = '예: 6299298580',
     Callback = function() end
 })
 
 AvatarBox:AddButton('Apply Custom Item ID', function()
-    local id = tonumber(Options['CustomItemIdInput'] and Options['CustomItemIdInput'].Value or '')
+    local id = tonumber(getOpt('CustomItemIdInput', ''))
     if not id then Library:Notify('유효한 아이템 ID를 입력하세요!'); return end
-    local char = LocalPlayer.Character
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if not hum then return end
-    pcall(function()
+    local hum = getHumanoid()
+    if not hum then Library:Notify('캐릭터를 찾지 못했습니다.'); return end
+    local ok, err = pcall(function()
         local desc = hum:GetAppliedDescription()
         local accessories = desc:GetAccessories(true)
-        table.insert(accessories, { AssetId = id, AccessoryType = Enum.AccessoryType.Hat, IsLayered = false })
+        table.insert(accessories, {
+            AssetId = id,
+            AccessoryType = Enum.AccessoryType.Hat,
+            IsLayered = false
+        })
         desc:SetAccessories(accessories, true)
         hum:ApplyDescription(desc)
-        Library:Notify('아이템 ID ' .. id .. ' 장착 완료!')
     end)
+    Library:Notify(ok and ('아이템 ID ' .. id .. ' 장착 완료!') or ('실패: ' .. tostring(err)))
 end)
 
 AvatarBox:AddInput('CopyUserIdInput', {
@@ -783,21 +1021,20 @@ AvatarBox:AddInput('CopyUserIdInput', {
     Default = '',
     Numeric = true,
     Finished = false,
-    Tooltip = '복사할 플레이어의 User ID 입력',
+    Tooltip = '복사하고 싶은 다른 사람의 User ID를 입력하세요.',
     Placeholder = '예: 123456789',
     Callback = function() end
 })
 
 AvatarBox:AddButton('Copy Player Avatar', function()
-    local targetId = tonumber(Options['CopyUserIdInput'] and Options['CopyUserIdInput'].Value or '')
+    local targetId = tonumber(getOpt('CopyUserIdInput', ''))
     if not targetId then Library:Notify('유효한 User ID를 입력하세요!'); return end
-    local char = LocalPlayer.Character
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if not hum then return end
+    local hum = getHumanoid()
+    if not hum then Library:Notify('캐릭터를 찾지 못했습니다.'); return end
     local ok, desc = pcall(function() return Players:GetHumanoidDescriptionFromUserId(targetId) end)
     if ok and desc then
-        pcall(function() hum:ApplyDescription(desc) end)
-        Library:Notify('플레이어 아바타 복사 완료!')
+        local ok2, err = pcall(function() hum:ApplyDescription(desc) end)
+        Library:Notify(ok2 and '해당 플레이어 아바타 복사 완료!' or ('실패: ' .. tostring(err)))
     else
         Library:Notify('아바타 정보를 불러오지 못했습니다.')
     end
@@ -813,13 +1050,31 @@ ThemeManager:ApplyToTab(Tabs.Settings)
 
 local SettingsGroupBox = Tabs.Settings:AddLeftGroupbox('Menu Settings')
 
-SettingsGroupBox:AddKeybind('MenuKeybind', { 
+-- Linoria에서 키바인드는 그룹박스가 아니라 Label에 붙여야 합니다
+SettingsGroupBox:AddLabel('Menu bind'):AddKeybind('MenuKeybind', { 
     Default = 'RightShift', 
     Mode = 'Toggle', 
     NoUI = true, 
     Text = 'Menu Toggle' 
 })
+if Options and Options.MenuKeybind then
+    Library.ToggleKeybind = Options.MenuKeybind
+end
 
 SettingsGroupBox:AddButton('Unload Script', function() Library:Unload() end)
+
+-- 언로드 시 이펙트/조명 복구
+Library:OnUnload(function()
+    pcall(removeAllESP)
+    for k, _ in pairs(fx) do clearEffect(k) end
+    if neonWasOn then
+        Lighting.Ambient = neonOriginal.Ambient or originalLightingSettings.Ambient
+        Lighting.OutdoorAmbient = neonOriginal.OutdoorAmbient or originalLightingSettings.OutdoorAmbient
+        if neonOriginal.ColorShift_Top then Lighting.ColorShift_Top = neonOriginal.ColorShift_Top end
+        if neonOriginal.ColorShift_Bottom then Lighting.ColorShift_Bottom = neonOriginal.ColorShift_Bottom end
+    end
+    if shaderWasOn then Lighting.ExposureCompensation = originalExposure end
+end)
+
 SaveManager:LoadAutoloadConfig()
 Library:Notify('Naberius 로드 완료!')
