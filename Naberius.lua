@@ -161,6 +161,226 @@ local function pressOneKey()
 end
 
 ---------------------------------------------------------
+-- [캐릭터 기능] 무한 체력 / 투명화 엔진
+---------------------------------------------------------
+-- 무한 체력 관련 변수
+local isGodModeRunning = false
+local godConnections = {}
+
+local function clearGodConnections()
+    for _, c in ipairs(godConnections) do
+        pcall(function() c:Disconnect() end)
+    end
+    godConnections = {}
+end
+
+-- 현재 캐릭터의 Humanoid에 무한 체력을 연결하는 함수
+-- 1) 체력이 깎이는 즉시(HealthChanged) 최대 체력으로 되돌림
+-- 2) 매 프레임(Heartbeat)에도 한 번 더 확인해서 놓치는 틈이 없게 함
+-- 3) Dead 상태 진입을 막아서 체력이 0이 되어도 쓰러지지 않게 함
+local function bindGodMode(char)
+    clearGodConnections()
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid") or char:WaitForChild("Humanoid", 5)
+    if not hum then return end
+
+    pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.Dead, false) end)
+    pcall(function() hum.Health = hum.MaxHealth end)
+
+    table.insert(godConnections, hum.HealthChanged:Connect(function(h)
+        if isGodModeRunning and h < hum.MaxHealth then
+            hum.Health = hum.MaxHealth
+        end
+    end))
+
+    table.insert(godConnections, RunService.Heartbeat:Connect(function()
+        if isGodModeRunning and hum.Parent and hum.Health < hum.MaxHealth then
+            hum.Health = hum.MaxHealth
+        end
+    end))
+end
+
+LocalPlayer.CharacterAdded:Connect(function(char)
+    if isGodModeRunning then
+        bindGodMode(char)
+    end
+end)
+
+-- 투명화(나한테는 보이고 다른 사람한테는 안 보이는) 관련 변수
+-- 원리: 서버/다른 플레이어에게 복제되는 것은 내 캐릭터 "몸통 파츠의 물리 위치"입니다.
+--   1) 내 화면용 가짜 복제 캐릭터(Naberius_Fake)를 만들어 실제 캐릭터 위치/애니메이션을 따라다니게 함 (나한테만 보임)
+--   2) 실제 캐릭터의 Root 조인트를 끊고 몸통 전체를 맵 아래 허공으로 옮겨서 고정 (다른 사람 화면에서 사라짐)
+--   3) HumanoidRootPart(투명한 파츠)는 원래 위치에 남아있어서 이동/상호작용 위치는 그대로 유지됨
+local isInvisibleRunning = false
+local invisData = nil
+
+-- R15(LowerTorso.Root) / R6(HumanoidRootPart.RootJoint) 모두 지원하는 루트 조인트 탐색 함수
+local function getRootJoint(char)
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil, nil end
+    local lower = char:FindFirstChild("LowerTorso")
+    if lower and lower:FindFirstChild("Root") then
+        return lower.Root, hrp
+    end
+    local rj = hrp:FindFirstChild("RootJoint")
+    if rj then
+        return rj, hrp
+    end
+    return nil, hrp
+end
+
+-- 투명화 해제: 가짜 캐릭터 삭제, 몸통을 원래 위치로 복귀, 루트 조인트 복구
+local function disableInvisible()
+    local d = invisData
+    invisData = nil
+    if not d then return end
+
+    for _, c in ipairs(d.conns) do
+        pcall(function() c:Disconnect() end)
+    end
+    pcall(function() d.fake:Destroy() end)
+
+    pcall(function()
+        if d.hrp and d.hrp.Parent and d.bodyRoot and d.bodyRoot.Parent then
+            d.bodyRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            d.bodyRoot.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+            d.bodyRoot.CFrame = d.hrp.CFrame * d.jointClone.C0 * d.jointClone.C1:Inverse()
+            d.jointClone.Parent = d.jointParent
+        end
+    end)
+end
+
+-- 투명화 적용 (성공하면 true 반환)
+local function enableInvisible()
+    local char = LocalPlayer.Character
+    if not char then
+        Library:Notify('캐릭터를 찾지 못했습니다.')
+        return false
+    end
+
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    local joint, hrp = getRootJoint(char)
+    if not hum or not hrp or not joint or not joint.Part1 then
+        Library:Notify('이 캐릭터는 투명화를 지원하지 않습니다.')
+        return false
+    end
+    if hum.Health <= 0 then
+        Library:Notify('캐릭터가 죽은 상태에서는 사용할 수 없습니다.')
+        return false
+    end
+
+    local bodyRoot = joint.Part1
+
+    -- 1. 내 화면에만 보이는 가짜 캐릭터 생성 (클라이언트에서 만든 인스턴스는 다른 사람에게 복제되지 않음)
+    char.Archivable = true
+    local fake = char:Clone()
+    if not fake then
+        Library:Notify('캐릭터 복제에 실패했습니다.')
+        return false
+    end
+    fake.Name = 'Naberius_Fake'
+
+    for _, d in ipairs(fake:GetDescendants()) do
+        if d:IsA("BaseScript") then
+            d:Destroy()
+        elseif d:IsA("BasePart") then
+            d.CanCollide = false
+            d.CanTouch = false
+            d.CanQuery = false
+            d.Massless = true
+        end
+    end
+
+    local fakeHum = fake:FindFirstChildOfClass("Humanoid")
+    if fakeHum then
+        fakeHum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+        fakeHum.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
+    end
+
+    local fakeHrp = fake:FindFirstChild("HumanoidRootPart")
+    if not fakeHrp then
+        fake:Destroy()
+        Library:Notify('가짜 캐릭터 생성에 실패했습니다.')
+        return false
+    end
+    fakeHrp.Anchored = true
+    fakeHrp.CFrame = hrp.CFrame
+    fake.Parent = Workspace
+
+    -- 가짜 캐릭터가 실제 캐릭터의 애니메이션(Motor6D Transform)을 그대로 따라 하도록 짝 지어두기
+    local fakeMotors = {}
+    for _, f in ipairs(fake:GetDescendants()) do
+        if f:IsA("Motor6D") and f.Parent then
+            fakeMotors[f.Parent.Name .. "/" .. f.Name] = f
+        end
+    end
+    local motorPairs = {}
+    for _, m in ipairs(char:GetDescendants()) do
+        if m:IsA("Motor6D") and m ~= joint and m.Parent then
+            local fm = fakeMotors[m.Parent.Name .. "/" .. m.Name]
+            if fm then motorPairs[m] = fm end
+        end
+    end
+
+    -- 2. 루트 조인트를 끊고 몸통을 맵 아래 허공에 고정
+    local jointClone = joint:Clone()
+    local jointParent = joint.Parent
+    local hideY = math.max(Workspace.FallenPartsDestroyHeight + 50, -450)
+    joint:Destroy()
+
+    local conns = {}
+
+    -- 물리 계산 직전에 매번 몸통 위치/속도를 고정 (중력으로 떨어져서 삭제되는 것을 방지)
+    table.insert(conns, RunService.Stepped:Connect(function()
+        if not hrp.Parent or not bodyRoot.Parent then return end
+        local p = hrp.Position
+        bodyRoot.CFrame = CFrame.new(p.X, hideY, p.Z)
+        bodyRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+        bodyRoot.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+    end))
+
+    -- 3. 가짜 캐릭터가 매 프레임 실제 위치와 동작을 따라가게 함
+    table.insert(conns, RunService.RenderStepped:Connect(function()
+        if not hrp.Parent or not fake.Parent then return end
+        fakeHrp.CFrame = hrp.CFrame
+        for real, fm in pairs(motorPairs) do
+            if real.Parent and fm.Parent then
+                fm.Transform = real.Transform
+            end
+        end
+    end))
+
+    invisData = {
+        fake = fake,
+        hrp = hrp,
+        bodyRoot = bodyRoot,
+        jointClone = jointClone,
+        jointParent = jointParent,
+        conns = conns
+    }
+    return true
+end
+
+-- 리스폰하면 투명화를 정리하고, 토글이 켜져 있으면 새 캐릭터에 다시 적용
+LocalPlayer.CharacterAdded:Connect(function(char)
+    if invisData then
+        disableInvisible()
+    end
+    if isInvisibleRunning then
+        task.wait(1.5)
+        if isInvisibleRunning and LocalPlayer.Character == char then
+            local ok, res = pcall(enableInvisible)
+            if not ok or not res then
+                isInvisibleRunning = false
+                if Toggles and Toggles['InvisibleToggle'] then
+                    pcall(function() Toggles['InvisibleToggle']:SetValue(false) end)
+                end
+            end
+        end
+    end
+end)
+
+---------------------------------------------------------
 -- [Main 탭]
 ---------------------------------------------------------
 local GroupBox = Tabs.Main:AddLeftGroupbox('ANTI AFK')
@@ -345,6 +565,51 @@ MovementBox:AddToggle('NoclipToggle', {
                 local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
                 if hum then hum:ChangeState(Enum.HumanoidStateType.Running) end
             end
+        end
+    end
+})
+
+-- Character 기능들 (무한 체력 / 투명화)
+local CharacterBox = Tabs.Main:AddRightGroupbox('Character')
+
+CharacterBox:AddToggle('GodModeToggle', {
+    Text = 'Infinite Health (무한 체력)',
+    Default = false,
+    Tooltip = '활성화하면 체력이 깎이는 즉시 최대 체력으로 채워지고, 체력이 0이 되어 쓰러지는 상태도 막습니다. (체력이 서버에서 관리되는 게임에서는 내 화면에서만 적용될 수 있습니다.)',
+    Callback = function(Value)
+        isGodModeRunning = Value
+        if Value then
+            task.spawn(bindGodMode, LocalPlayer.Character)
+        else
+            clearGodConnections()
+            local char = LocalPlayer.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            if hum then
+                pcall(function() hum:SetStateEnabled(Enum.HumanoidStateType.Dead, true) end)
+            end
+        end
+    end
+})
+
+CharacterBox:AddToggle('InvisibleToggle', {
+    Text = 'Invisible (투명화)',
+    Default = false,
+    Tooltip = '활성화하면 내 화면에서는 캐릭터가 정상적으로(불투명하게) 보이지만, 다른 플레이어에게는 내 몸이 완전히 사라진 것처럼 보입니다. 끄면 원래대로 돌아옵니다. (게임에 따라 동작하지 않거나 안티치트에 걸릴 수 있습니다.)',
+    Callback = function(Value)
+        isInvisibleRunning = Value
+        if Value then
+            local ok, res = pcall(enableInvisible)
+            if not ok or not res then
+                isInvisibleRunning = false
+                if not ok then
+                    Library:Notify('투명화 실패: ' .. tostring(res))
+                end
+                if Toggles and Toggles['InvisibleToggle'] then
+                    pcall(function() Toggles['InvisibleToggle']:SetValue(false) end)
+                end
+            end
+        else
+            pcall(disableInvisible)
         end
     end
 })
@@ -1066,6 +1331,10 @@ SettingsGroupBox:AddButton('Unload Script', function() Library:Unload() end)
 -- 언로드 시 이펙트/조명 복구
 Library:OnUnload(function()
     pcall(removeAllESP)
+    isGodModeRunning = false
+    isInvisibleRunning = false
+    pcall(clearGodConnections)
+    pcall(disableInvisible)
     for k, _ in pairs(fx) do clearEffect(k) end
     if neonWasOn then
         Lighting.Ambient = neonOriginal.Ambient or originalLightingSettings.Ambient
