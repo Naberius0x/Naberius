@@ -1,4 +1,4 @@
--- Naberius Script (Full & Completely Fixed Version)
+-- Naberius Script (Full, Completely Fixed & Restored Version)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -142,8 +142,9 @@ Tooltip = 'Ctrl 누른 채 클릭하면 그 위치로 순간이동합니다.',
 Callback = function() end
 })
 
--- Ctrl + Click TP가 안 되던 입력 감지 오류 수정
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
+-- [완벽 수정됨] 두 번째 스크립트의 확실하고 안정적인 Ctrl + Click TP 감지 로직 적용
+UserInputService.InputBegan:Connect(function(input, gp)
+if gp then return end
 if input.UserInputType == Enum.UserInputType.MouseButton1 then
 if Toggles['CtrlClickTp'] and Toggles['CtrlClickTp'].Value then
 if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.RightControl) then
