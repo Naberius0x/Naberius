@@ -1,4 +1,4 @@
--- Naberius (Full Integrated & Color Picker Added Version)
+-- Naberius (Full Integrated & Completely Fixed Version)
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local VirtualUser = game:GetService("VirtualUser")
@@ -57,6 +57,14 @@ local isObjectEspRunning = false
 local originalTransparencies = {}
 local objectEspContainer = {}
 local espData = {}
+
+-- 효과 관련 저장용 변수
+local customBloomEffect = nil
+local customColorCorrEffect = nil
+local originalLightingSettings = {
+    Ambient = Lighting.Ambient,
+    OutdoorAmbient = Lighting.OutdoorAmbient
+}
 
 -- 키보드 1번 연타 AFK 관련 변수
 local isKeyAfkRunning = false
@@ -287,7 +295,7 @@ FpsBox:AddToggle('FpsBoostToggle', {
     end
 })
 
--- TELEPORT 기능들 (컨트롤 + 클릭 TP 완벽 수정)
+-- TELEPORT 기능들
 TpBox:AddToggle('ClickTpToggle', {
     Text = 'Enable Ctrl + Click TP',
     Default = false,
@@ -344,14 +352,14 @@ MovementBox:AddToggle('NoclipToggle', {
 })
 
 ---------------------------------------------------------
--- [Visuals 탭] (컬러 피커가 추가된 ESP)
+-- [Visuals 탭]
 ---------------------------------------------------------
 local EspBox = Tabs.Visuals:AddLeftGroupbox('Player ESP')
 local XrayBox = Tabs.Visuals:AddRightGroupbox('X-Ray & Object ESP')
 local FreecamBox = Tabs.Visuals:AddRightGroupbox('Freecam')
 local NameBox = Tabs.Visuals:AddLeftGroupbox('Custom UI Name Changer')
+local VisualsEffectsBox = Tabs.Visuals:AddLeftGroupbox('Visuals & Shaders')
 
--- 플레이어 ESP 수정 (컬러 피커 연동)
 local function removeESPForPlayer(name)
     if espData[name] then
         pcall(function() espData[name].conn:Disconnect() end)
@@ -382,27 +390,24 @@ local function startESP(player)
 
         local initialColor = Options['ESPColor'] and Options['ESPColor'].Value or Color3.fromRGB(255, 0, 0)
 
-        -- 1. 캐릭터 외곽선 하이라이트
         local highlight = Instance.new('Highlight')
-        highlight.Name = 'CodeHub_Highlight'
+        highlight.Name = 'Naberius_Highlight'
         highlight.Adornee = char
         highlight.FillColor = initialColor
         highlight.FillTransparency = 0.75
-        highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+        highlight.OutlineColor = initialColor
         highlight.OutlineTransparency = 0
         highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
         highlight.Parent = getGuiParent()
 
-        -- 2. 머리 위 이름 및 옆면 체력바 (BillboardGui)
         local billboard = Instance.new('BillboardGui')
-        billboard.Name = 'CodeHub_Billboard'
+        billboard.Name = 'Naberius_Billboard'
         billboard.Adornee = root
         billboard.Size = UDim2.new(4.5, 0, 6, 0)
         billboard.StudsOffset = Vector3.new(0, 0.5, 0)
         billboard.AlwaysOnTop = true
         billboard.Parent = getGuiParent()
 
-        -- 머리 위 이름 표시
         local nameLabel = Instance.new('TextLabel')
         nameLabel.Name = 'NameLabel'
         nameLabel.Size = UDim2.new(1.5, 0, 0.2, 0)
@@ -416,7 +421,6 @@ local function startESP(player)
         nameLabel.TextScaled = true
         nameLabel.Parent = billboard
 
-        -- 왼쪽 옆면 체력바 배경
         local hpBg = Instance.new('Frame')
         hpBg.Name = 'HpBg'
         hpBg.Size = UDim2.new(0.08, 0, 1, 0)
@@ -425,7 +429,6 @@ local function startESP(player)
         hpBg.BorderSizePixel = 0
         hpBg.Parent = billboard
 
-        -- 실시간 체력바 게이지
         local hpBar = Instance.new('Frame')
         hpBar.Name = 'HpBar'
         hpBar.Size = UDim2.new(1, 0, 1, 0)
@@ -435,7 +438,6 @@ local function startESP(player)
         hpBar.BorderSizePixel = 0
         hpBar.Parent = hpBg
 
-        -- 실시간 업데이트 루프 (컬러 피커 색상 동기화 포함)
         local conn = RunService.RenderStepped:Connect(function()
             if not isEspRunning or not char.Parent or hum.Health <= 0 then
                 highlight.Enabled = false
@@ -448,6 +450,7 @@ local function startESP(player)
 
             local currentColor = Options['ESPColor'] and Options['ESPColor'].Value or Color3.fromRGB(255, 0, 0)
             highlight.FillColor = currentColor
+            highlight.OutlineColor = currentColor
 
             local pct = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
             hpBar.Size = UDim2.new(1, 0, pct, 0)
@@ -476,7 +479,7 @@ end
 EspBox:AddToggle('EspToggle', {
     Text = 'Enable ESP',
     Default = false,
-    Tooltip = '벽 뒤에 있는 플레이어의 외곽선, 이름, 체력바를 투시합니다.',
+    Tooltip = '벽 뒤에 있는 플레이어의 외곽선 테두리, 이름, 체력바를 투시합니다.',
     Callback = function(Value)
         isEspRunning = Value
         if Value then
@@ -488,7 +491,7 @@ EspBox:AddToggle('EspToggle', {
         end
     end
 }):AddColorPicker('ESPColor', {
-    Title = 'ESP Color',
+    Title = 'ESP Outline Color',
     Default = Color3.fromRGB(255, 0, 0),
 })
 
@@ -519,7 +522,6 @@ XrayBox:AddToggle('XrayToggle', {
     end
 })
 
--- 오브젝트 ESP
 XrayBox:AddToggle('ObjectEspToggle', {
     Text = 'Enable Object ESP',
     Default = false,
@@ -585,6 +587,7 @@ XrayBox:AddToggle('ObjectEspToggle', {
     end
 })
 
+-- Freecam (복구 완료)
 FreecamBox:AddToggle('FreecamToggle', {
     Text = 'Enable Freecam',
     Default = false,
@@ -679,6 +682,7 @@ UserInputService.InputChanged:Connect(function(input, gp)
     end
 end)
 
+-- Custom UI Name Changer (복구 완료)
 NameBox:AddInput('NameChangeInput', {
     Text = 'Client Fake Nickname',
     Default = '',
@@ -697,33 +701,148 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
+-- Visuals & Shaders (블룸, 네온, 쉐이더)
+VisualsEffectsBox:AddToggle('BloomToggle', {
+    Text = 'Custom Bloom (광채 효과)',
+    Default = false,
+    Tooltip = '화면의 밝은 부분에 부드러운 광채(블룸) 효과를 부여합니다.',
+    Callback = function(val)
+        if val then
+            customBloomEffect = Instance.new("BloomEffect")
+            customBloomEffect.Intensity = 0.5
+            customBloomEffect.Size = 24
+            customBloomEffect.Threshold = 0.8
+            customBloomEffect.Parent = Lighting
+        else
+            if customBloomEffect then customBloomEffect:Destroy(); customBloomEffect = nil end
+        end
+    end
+})
+
+VisualsEffectsBox:AddToggle('NeonLightingToggle', {
+    Text = 'Neon Environment (네온 조명)',
+    Default = false,
+    Tooltip = '맵 전체에 화려하고 사이버틱한 네온 색감을 적용합니다.',
+    Callback = function(val)
+        if val then
+            originalLightingSettings.Ambient = Lighting.Ambient
+            originalLightingSettings.OutdoorAmbient = Lighting.OutdoorAmbient
+            Lighting.Ambient = Color3.fromRGB(40, 20, 60)
+            Lighting.OutdoorAmbient = Color3.fromRGB(60, 40, 80)
+        else
+            Lighting.Ambient = originalLightingSettings.Ambient
+            Lighting.OutdoorAmbient = originalLightingSettings.OutdoorAmbient
+        end
+    end
+})
+
+VisualsEffectsBox:AddToggle('ShaderToggle', {
+    Text = 'Custom Shader (시네마틱 쉐이더)',
+    Default = false,
+    Tooltip = '화면을 선명하고 분위기 있는 고품질 쉐이더 색감으로 보정합니다.',
+    Callback = function(val)
+        if val then
+            customColorCorrEffect = Instance.new("ColorCorrectionEffect")
+            customColorCorrEffect.Brightness = 0.05
+            customColorCorrEffect.Contrast = 0.2
+            customColorCorrEffect.Saturation = 0.15
+            customColorCorrEffect.TintColor = Color3.fromRGB(255, 245, 230)
+            customColorCorrEffect.Parent = Lighting
+        else
+            if customColorCorrEffect then customColorCorrEffect:Destroy(); customColorCorrEffect = nil end
+        end
+    end
+})
+
 ---------------------------------------------------------
 -- [Avatar 탭]
 ---------------------------------------------------------
-local AvatarBox = Tabs.Avatar:AddLeftGroupbox('Avatar Changer')
+local AvatarBox = Tabs.Avatar:AddLeftGroupbox('Avatar & Customizer')
 
-AvatarBox:AddButton('Apply Headless & Korblox', function()
+AvatarBox:AddButton('Apply Korblox', function()
     local char = LocalPlayer.Character
     if not char then return end
     local hum = char:FindFirstChildOfClass("Humanoid")
-    
-    if hum then
-        if hum.RigType == Enum.HumanoidRigType.R15 then
-            local desc = hum:GetAppliedDescription()
-            desc.Head = 15093053680
-            desc.RightLeg = 139607718
-            hum:ApplyDescription(desc)
-            Library:Notify('R15: Headless & Korblox 적용됨')
-        else
-            if char:FindFirstChild("Head") then
-                char.Head.Transparency = 1
-                if char.Head:FindFirstChild("face") then char.Head.face:Destroy() end
-            end
-            if char:FindFirstChild("Right Leg") then
-                char["Right Leg"].Transparency = 1
-            end
-            Library:Notify('R6: 헤드리스 및 코블록스 파츠 투명화 완료')
+    if hum and hum.RigType == Enum.HumanoidRigType.R15 then
+        local desc = hum:GetAppliedDescription()
+        desc.RightLeg = 139607718
+        hum:ApplyDescription(desc)
+        Library:Notify('코블록스 다리가 적용되었습니다!')
+    else
+        Library:Notify('R15 캐릭터에서만 지원됩니다.')
+    end
+end)
+
+AvatarBox:AddButton('Apply Headless', function()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum and hum.RigType == Enum.HumanoidRigType.R15 then
+        local desc = hum:GetAppliedDescription()
+        desc.Head = 15093053680
+        hum:ApplyDescription(desc)
+        Library:Notify('헤드리스가 적용되었습니다!')
+    else
+        if char:FindFirstChild("Head") then
+            char.Head.Transparency = 1
+            if char.Head:FindFirstChild("face") then char.Head.face:Destroy() end
         end
+        Library:Notify('R6 헤드리스(투명화)가 적용되었습니다!')
+    end
+end)
+
+AvatarBox:AddInput('CustomItemIdInput', {
+    Text = 'Custom Item Asset ID',
+    Default = '',
+    Numeric = true,
+    Finished = false,
+    Tooltip = '장착하고 싶은 아이템의 고유 숫자 ID를 입력하세요.',
+    Placeholder = '예: 6299298580',
+    Callback = function() end
+})
+
+AvatarBox:AddButton('Apply Custom Item ID', function()
+    local id = tonumber(Options['CustomItemIdInput'] and Options['CustomItemIdInput'].Value or '')
+    if not id then Library:Notify('유효한 아이템 ID를 입력하세요!'); return end
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+    pcall(function()
+        local desc = hum:GetAppliedDescription()
+        local accessories = desc:GetAccessories(true)
+        table.insert(accessories, {
+            AssetId = id,
+            AccessoryType = Enum.AccessoryType.Hat,
+            IsLayered = false
+        })
+        desc:SetAccessories(accessories, true)
+        hum:ApplyDescription(desc)
+        Library:Notify('아이템 ID ' .. id .. ' 장착 완료!')
+    end)
+end)
+
+AvatarBox:AddInput('CopyUserIdInput', {
+    Text = 'Target User ID (아바타 복사)',
+    Default = '',
+    Numeric = true,
+    Finished = false,
+    Tooltip = '복사하고 싶은 다른 사람의 User ID를 입력하세요.',
+    Placeholder = '예: 123456789',
+    Callback = function() end
+})
+
+AvatarBox:AddButton('Copy Player Avatar', function()
+    local targetId = tonumber(Options['CopyUserIdInput'] and Options['CopyUserIdInput'].Value or '')
+    if not targetId then Library:Notify('유효한 User ID를 입력하세요!'); return end
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+    local ok, desc = pcall(function() return Players:GetHumanoidDescriptionFromUserId(targetId) end)
+    if ok and desc then
+        pcall(function() hum:ApplyDescription(desc) end)
+        Library:Notify('해당 플레이어 아바타 복사 완료!')
+    else
+        Library:Notify('아바타 정보를 불러오지 못했습니다.')
     end
 end)
 
@@ -746,4 +865,4 @@ SettingsGroupBox:AddKeybind('MenuKeybind', {
 
 SettingsGroupBox:AddButton('Unload Script', function() Library:Unload() end)
 SaveManager:LoadAutoloadConfig()
-Library:Notify('T63-Hub Full Version Loaded!')
+Library:Notify('Naberius 로드 완료!')
