@@ -1,4 +1,4 @@
--- Naberius (Full Integrated & Completely Fixed Version)
+-- T63-Hub (Full Integrated & Color Picker Added Version)
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local VirtualUser = game:GetService("VirtualUser")
@@ -17,7 +17,10 @@ local Library = loadstring(game:HttpGet(repo .. 'Library.lua'))()
 local ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))()
 local SaveManager = loadstring(game:HttpGet(repo .. 'addons/SaveManager.lua'))()
 
--- CoreGui 보호 및 안전 부모 설정 함수 (ESP가 안 뜨던 원인 해결)
+local Toggles = Library.Toggles
+local Options = Library.Options
+
+-- CoreGui 보호 및 안전 부모 설정 함수
 local function getGuiParent()
     local ok, parent = pcall(function()
         if gethui then return gethui() end
@@ -29,7 +32,7 @@ end
 
 -- 창 생성
 local Window = Library:CreateWindow({
-    Title = 'Naberius',
+    Title = 'T63-Hub',
     Center = true,
     AutoShow = true,
 })
@@ -341,14 +344,14 @@ MovementBox:AddToggle('NoclipToggle', {
 })
 
 ---------------------------------------------------------
--- [Visuals 탭] (플레이어 ESP 및 오브젝트 ESP 완벽 수정)
+-- [Visuals 탭] (컬러 피커가 추가된 ESP)
 ---------------------------------------------------------
 local EspBox = Tabs.Visuals:AddLeftGroupbox('Player ESP')
 local XrayBox = Tabs.Visuals:AddRightGroupbox('X-Ray & Object ESP')
 local FreecamBox = Tabs.Visuals:AddRightGroupbox('Freecam')
 local NameBox = Tabs.Visuals:AddLeftGroupbox('Custom UI Name Changer')
 
--- 플레이어 ESP 수정 (외곽선 + 머리 위 이름 + 옆면 체력바 완벽 구현)
+-- 플레이어 ESP 수정 (컬러 피커 연동)
 local function removeESPForPlayer(name)
     if espData[name] then
         pcall(function() espData[name].conn:Disconnect() end)
@@ -377,13 +380,13 @@ local function startESP(player)
 
         removeESPForPlayer(player.Name)
 
-        local color = Color3.fromRGB(255, 0, 0)
+        local initialColor = Options['ESPColor'] and Options['ESPColor'].Value or Color3.fromRGB(255, 0, 0)
 
         -- 1. 캐릭터 외곽선 하이라이트
         local highlight = Instance.new('Highlight')
         highlight.Name = 'CodeHub_Highlight'
         highlight.Adornee = char
-        highlight.FillColor = color
+        highlight.FillColor = initialColor
         highlight.FillTransparency = 0.75
         highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
         highlight.OutlineTransparency = 0
@@ -432,7 +435,7 @@ local function startESP(player)
         hpBar.BorderSizePixel = 0
         hpBar.Parent = hpBg
 
-        -- 실시간 업데이트 루프
+        -- 실시간 업데이트 루프 (컬러 피커 색상 동기화 포함)
         local conn = RunService.RenderStepped:Connect(function()
             if not isEspRunning or not char.Parent or hum.Health <= 0 then
                 highlight.Enabled = false
@@ -442,6 +445,9 @@ local function startESP(player)
 
             highlight.Enabled = true
             billboard.Enabled = true
+
+            local currentColor = Options['ESPColor'] and Options['ESPColor'].Value or Color3.fromRGB(255, 0, 0)
+            highlight.FillColor = currentColor
 
             local pct = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
             hpBar.Size = UDim2.new(1, 0, pct, 0)
@@ -481,6 +487,9 @@ EspBox:AddToggle('EspToggle', {
             removeAllESP()
         end
     end
+}):AddColorPicker('ESPColor', {
+    Title = 'ESP Color',
+    Default = Color3.fromRGB(255, 0, 0),
 })
 
 Players.PlayerAdded:Connect(function(player)
@@ -510,7 +519,7 @@ XrayBox:AddToggle('XrayToggle', {
     end
 })
 
--- 오브젝트 ESP 수정 (ProximityPrompt 기준 안정적 스캔 및 루프 처리)
+-- 오브젝트 ESP
 XrayBox:AddToggle('ObjectEspToggle', {
     Text = 'Enable Object ESP',
     Default = false,
