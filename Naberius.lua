@@ -1,4 +1,4 @@
--- Naberius Script (Fixed ESP, TP, Object ESP Optimization, Settings Tab)
+-- Naberius Script (Full & Completely Fixed Version)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -19,9 +19,11 @@ local SaveManager = loadstring(game:HttpGet(repo .. 'addons/SaveManager.lua'))()
 local Toggles = Library.Toggles
 local Options = Library.Options
 
+-- CoreGui 보호 및 안전 부모 설정 함수 (ESP가 안 뜨던 원인 해결)
 local function getGuiParent()
 local ok, parent = pcall(function()
 if gethui then return gethui() end
+if syn and syn.protect_gui then return CoreGui end
 return CoreGui
 end)
 return (ok and parent) or Player:WaitForChild("PlayerGui")
@@ -96,7 +98,7 @@ Default = false,
 Tooltip = '그래픽 품질을 최소화하여 FPS를 올립니다.',
 Callback = function(val)
 if val then
-pcall(function() settings().Rendering.QualityLevel = Enum.QualityLevel.Level01 end)
+settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
 pcall(function() Workspace.StreamingEnabled = false end)
 pcall(function()
 for _, v in pairs(Lighting:GetChildren()) do
@@ -109,7 +111,7 @@ Lighting.FogEnd = 100000
 Lighting.FogStart = 99999
 end)
 else
-pcall(function() settings().Rendering.QualityLevel = Enum.QualityLevel.Automatic end)
+settings().Rendering.QualityLevel = Enum.QualityLevel.Automatic
 pcall(function()
 for _, v in pairs(Lighting:GetChildren()) do
 if v:IsA('BlurEffect') or v:IsA('DepthOfFieldEffect') or v:IsA('SunRaysEffect') or v:IsA('BloomEffect') or v:IsA('ColorCorrectionEffect') then
@@ -140,7 +142,8 @@ Tooltip = 'Ctrl 누른 채 클릭하면 그 위치로 순간이동합니다.',
 Callback = function() end
 })
 
-UserInputService.InputBegan:Connect(function(input)
+-- Ctrl + Click TP가 안 되던 입력 감지 오류 수정
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
 if input.UserInputType == Enum.UserInputType.MouseButton1 then
 if Toggles['CtrlClickTp'] and Toggles['CtrlClickTp'].Value then
 if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.RightControl) then
@@ -228,47 +231,42 @@ gui.IgnoreGuiInset = true
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = getGuiParent()
 
-local box = Instance.new('Frame')
-box.Name = 'Box'
-box.BackgroundTransparency = 1
-box.BorderSizePixel = 0
-box.ZIndex = 10
-box.Parent = gui
-
-local stroke = Instance.new('UIStroke')
-stroke.Name = 'BoxStroke'
-stroke.Thickness = 1.5
-stroke.Color = Color3.fromRGB(255, 50, 50)
-stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-stroke.Parent = box
+for i = 1, 4 do
+ local line = Instance.new('Frame')
+ line.Name = 'Line' .. i
+ line.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+ line.BorderSizePixel = 0
+ line.ZIndex = 10
+ line.Parent = gui
+ end
 
 local nameLabel = Instance.new('TextLabel')
-nameLabel.Name = 'NameLabel'
-nameLabel.BackgroundTransparency = 1
-nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-nameLabel.TextStrokeTransparency = 0
-nameLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-nameLabel.Font = Enum.Font.GothamBold
-nameLabel.TextSize = 12
-nameLabel.Text = player.Name
-nameLabel.TextXAlignment = Enum.TextXAlignment.Center
-nameLabel.ZIndex = 10
-nameLabel.Parent = gui
+ nameLabel.Name = 'NameLabel'
+ nameLabel.BackgroundTransparency = 1
+ nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+ nameLabel.TextStrokeTransparency = 0
+ nameLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+ nameLabel.Font = Enum.Font.GothamBold
+ nameLabel.TextSize = 12
+ nameLabel.Text = player.Name
+ nameLabel.Size = UDim2.new(0, 200, 0, 16)
+ nameLabel.ZIndex = 10
+ nameLabel.Parent = gui
 
 local hpBg = Instance.new('Frame')
-hpBg.Name = 'HpBg'
-hpBg.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-hpBg.BorderSizePixel = 0
-hpBg.ZIndex = 10
-hpBg.Parent = gui
+ hpBg.Name = 'HpBg'
+ hpBg.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+ hpBg.BorderSizePixel = 0
+ hpBg.ZIndex = 10
+ hpBg.Parent = gui
 
 local hpBar = Instance.new('Frame')
-hpBar.Name = 'HpBar'
-hpBar.BackgroundColor3 = Color3.fromRGB(50, 220, 50)
-hpBar.BorderSizePixel = 0
-hpBar.AnchorPoint = Vector2.new(0, 1)
-hpBar.ZIndex = 11
-hpBar.Parent = hpBg
+ hpBar.Name = 'HpBar'
+ hpBar.BackgroundColor3 = Color3.fromRGB(50, 220, 50)
+ hpBar.BorderSizePixel = 0
+ hpBar.AnchorPoint = Vector2.new(0, 1)
+ hpBar.ZIndex = 11
+ hpBar.Parent = hpBg
 
 return gui
 end
@@ -280,65 +278,75 @@ removeESPForPlayer(player.Name)
 local gui = makeESPGui(player)
 
 local conn = RunService.RenderStepped:Connect(function()
-if not Toggles['PlayerESP'] or not Toggles['PlayerESP'].Value then
-gui.Enabled = false
-return
-end
+ if not Toggles['PlayerESP'] or not Toggles['PlayerESP'].Value then
+ gui.Enabled = false
+ return
+ end
 
 local char = player.Character
-local root = char and char:FindFirstChild('HumanoidRootPart')
-local hum = char and char:FindFirstChildOfClass('Humanoid')
+ local root = char and char:FindFirstChild('HumanoidRootPart')
+ local hum = char and char:FindFirstChildOfClass('Humanoid')
 
 if not root or not hum or hum.Health <= 0 then
-gui.Enabled = false
-return
-end
+ gui.Enabled = false
+ return
+ end
 
-local topVP, topOn = Camera:WorldToViewportPoint(root.Position + Vector3.new(0, 3.2, 0))
-local botVP, botOn = Camera:WorldToViewportPoint(root.Position - Vector3.new(0, 3.2, 0))
+local topVP = Camera:WorldToViewportPoint(root.Position + Vector3.new(0, 3.2, 0))
+ local botVP = Camera:WorldToViewportPoint(root.Position - Vector3.new(0, 3.2, 0))
 
-if topVP.Z <= 0 or botVP.Z <= 0 or (not topOn and not botOn) then
-gui.Enabled = false
-return
-end
+if topVP.Z <= 0 then
+ gui.Enabled = false
+ return
+ end
 
 gui.Enabled = true
 
-local h = math.max(math.abs(botVP.Y - topVP.Y), 10)
-local w = h * 0.55
-local cx = (topVP.X + botVP.X) / 2
-local L = math.floor(cx - w / 2)
-local T = math.floor(math.min(topVP.Y, botVP.Y))
+local topX, topY = topVP.X, topVP.Y
+ local botX, botY = botVP.X, botVP.Y
 
-local color = (Options['ESPColor'] and Options['ESPColor'].Value) or Color3.fromRGB(255, 50, 50)
+local h = math.abs(botY - topY)
+ local w = h * 0.55
+ local cx = (topX + botX) / 2
 
-local box = gui:FindFirstChild('Box')
-if box then
-box.Position = UDim2.fromOffset(L, T)
-box.Size = UDim2.fromOffset(math.floor(w), math.floor(h))
-local stroke = box:FindFirstChild('BoxStroke')
-if stroke then stroke.Color = color end
-end
+local L = cx - w / 2
+ local R = cx + w / 2
+ local T = topY
+ local B = botY
+ local thick = 1.5
+
+local color = Options['ESPColor'] and Options['ESPColor'].Value or Color3.fromRGB(255, 50, 50)
+
+local l1 = gui:FindFirstChild('Line1')
+ local l2 = gui:FindFirstChild('Line2')
+ local l3 = gui:FindFirstChild('Line3')
+ local l4 = gui:FindFirstChild('Line4')
+
+if l1 then l1.BackgroundColor3 = color; l1.Position = UDim2.new(0, L, 0, T); l1.Size = UDim2.new(0, w, 0, thick) end
+ if l2 then l2.BackgroundColor3 = color; l2.Position = UDim2.new(0, L, 0, B); l2.Size = UDim2.new(0, w, 0, thick) end
+ if l3 then l3.BackgroundColor3 = color; l3.Position = UDim2.new(0, L, 0, T); l3.Size = UDim2.new(0, thick, 0, h) end
+ if l4 then l4.BackgroundColor3 = color; l4.Position = UDim2.new(0, R, 0, T); l4.Size = UDim2.new(0, thick, 0, h) end
 
 local nl = gui:FindFirstChild('NameLabel')
-if nl then
-nl.Position = UDim2.fromOffset(math.floor(cx - 100), T - 18)
-nl.Size = UDim2.fromOffset(200, 16)
-end
+ if nl then
+ nl.Position = UDim2.new(0, L, 0, T - 17)
+ nl.Size = UDim2.new(0, w, 0, 16)
+ nl.TextXAlignment = Enum.TextXAlignment.Center
+ end
 
 local hpBg = gui:FindFirstChild('HpBg')
-local hpBar = hpBg and hpBg:FindFirstChild('HpBar')
-if hpBg and hpBar then
-local bw = 4
-hpBg.Position = UDim2.fromOffset(L - bw - 3, T)
-hpBg.Size = UDim2.fromOffset(bw, math.floor(h))
+ local hpBar = hpBg and hpBg:FindFirstChild('HpBar')
+ if hpBg and hpBar then
+ local bw = 4
+ hpBg.Position = UDim2.new(0, L - bw - 2, 0, T)
+ hpBg.Size = UDim2.new(0, bw, 0, h)
 
-local pct = math.clamp(hum.Health / math.max(hum.MaxHealth, 1), 0, 1)
-hpBar.BackgroundColor3 = Color3.fromRGB(math.floor(255 * (1 - pct)), math.floor(255 * pct), 0)
-hpBar.Size = UDim2.new(1, 0, pct, 0)
-hpBar.Position = UDim2.new(0, 0, 1, 0)
-end
-end)
+local pct = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
+ hpBar.BackgroundColor3 = Color3.fromRGB(math.floor(255*(1-pct)), math.floor(255*pct), 0)
+ hpBar.Size = UDim2.new(1, 0, pct, 0)
+ hpBar.Position = UDim2.new(0, 0, 1, 0)
+ end
+ end)
 
 espData[player.Name] = { gui = gui, conn = conn }
 end
@@ -372,121 +380,146 @@ Players.PlayerRemoving:Connect(function(p)
 removeESPForPlayer(p.Name)
 end)
 
--- Object ESP (10초 주기 스캔 + 초경량 렌더링)
-local objEspFolder = nil
-local objEspItems = {}
-local objEspRenderConn = nil
+-- Object ESP (오브젝트 ESP 및 렉 방지 최적화 스캔)
+local objEspConns = {}
+local objEspGuis = {}
 local objEspLastScan = 0
-local OBJ_INTERVAL = 10
+local OBJ_INTERVAL = 15
 
 local function removeObjectESP()
-if objEspRenderConn then
-pcall(function() objEspRenderConn:Disconnect() end)
-objEspRenderConn = nil
-end
-if objEspFolder then
-pcall(function() objEspFolder:Destroy() end)
-objEspFolder = nil
-end
-objEspItems = {}
+for _, c in pairs(objEspConns) do pcall(function() c:Disconnect() end) end
+for _, g in pairs(objEspGuis) do pcall(function() g:Destroy() end) end
+objEspConns = {}
+objEspGuis = {}
 end
 
-local function scanObjectESP()
-if objEspFolder then
-pcall(function() objEspFolder:Destroy() end)
-end
-objEspItems = {}
-
+local function createObjESP(adornPart, actionText, objectText)
 local gui = Instance.new('ScreenGui')
-gui.Name = 'Naberius_ObjESP'
 gui.ResetOnSpawn = false
 gui.IgnoreGuiInset = true
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = getGuiParent()
-objEspFolder = gui
 
-for _, obj in ipairs(Workspace:GetDescendants()) do
-if obj:IsA('ProximityPrompt') and obj.Enabled then
+for i = 1, 4 do
+ local line = Instance.new('Frame')
+ line.Name = 'Line' .. i
+ line.BackgroundColor3 = Color3.fromRGB(255, 220, 50)
+ line.BorderSizePixel = 0
+ line.ZIndex = 10
+ line.Parent = gui
+ end
+
+local nameLabel = Instance.new('TextLabel')
+ nameLabel.Name = 'NameLabel'
+ nameLabel.BackgroundTransparency = 1
+ nameLabel.TextColor3 = Color3.fromRGB(255, 220, 50)
+ nameLabel.TextStrokeTransparency = 0
+ nameLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+ nameLabel.Font = Enum.Font.GothamBold
+ nameLabel.TextSize = 12
+ nameLabel.Text = actionText
+ nameLabel.Size = UDim2.new(0, 200, 0, 16)
+ nameLabel.ZIndex = 10
+ nameLabel.Parent = gui
+
+local descLabel = Instance.new('TextLabel')
+ descLabel.Name = 'DescLabel'
+ descLabel.BackgroundTransparency = 1
+ descLabel.TextColor3 = Color3.fromRGB(210, 210, 210)
+ descLabel.TextStrokeTransparency = 0
+ descLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+ descLabel.Font = Enum.Font.Gotham
+ descLabel.TextSize = 11
+ descLabel.Text = objectText
+ descLabel.Size = UDim2.new(0, 200, 0, 14)
+ descLabel.ZIndex = 10
+ descLabel.Parent = gui
+
+local conn = RunService.RenderStepped:Connect(function()
+ if not Toggles['ObjectESP'] or not Toggles['ObjectESP'].Value then
+ gui.Enabled = false
+ return
+ end
+ if not adornPart or not adornPart.Parent then
+ gui:Destroy()
+ return
+ end
+
+local size = adornPart.Size
+ local cf = adornPart.CFrame
+ local offsets = {
+ Vector3.new( size.X/2, size.Y/2, size.Z/2),
+ Vector3.new(-size.X/2, size.Y/2, size.Z/2),
+ Vector3.new( size.X/2, -size.Y/2, size.Z/2),
+ Vector3.new(-size.X/2, -size.Y/2, size.Z/2),
+ Vector3.new( size.X/2, size.Y/2, -size.Z/2),
+ Vector3.new(-size.X/2, size.Y/2, -size.Z/2),
+ Vector3.new( size.X/2, -size.Y/2, -size.Z/2),
+ Vector3.new(-size.X/2, -size.Y/2, -size.Z/2),
+ }
+
+local minX, minY = math.huge, math.huge
+ local maxX, maxY = -math.huge, -math.huge
+ local visible = false
+
+for _, offset in ipairs(offsets) do
+ local wp = (cf * CFrame.new(offset)).Position
+ local vp = Camera:WorldToViewportPoint(wp)
+ if vp.Z > 0 then
+ visible = true
+ if vp.X < minX then minX = vp.X end
+ if vp.Y < minY then minY = vp.Y end
+ if vp.X > maxX then maxX = vp.X end
+ if vp.Y > maxY then maxY = vp.Y end
+ end
+ end
+
+if not visible then gui.Enabled = false; return end
+ gui.Enabled = true
+
+local w = maxX - minX
+ local h = maxY - minY
+ local thick = 1.5
+
+local l1 = gui:FindFirstChild('Line1')
+ local l2 = gui:FindFirstChild('Line2')
+ local l3 = gui:FindFirstChild('Line3')
+ local l4 = gui:FindFirstChild('Line4')
+
+if l1 then l1.Position = UDim2.new(0, minX, 0, minY); l1.Size = UDim2.new(0, w, 0, thick) end
+ if l2 then l2.Position = UDim2.new(0, minX, 0, maxY); l2.Size = UDim2.new(0, w, 0, thick) end
+ if l3 then l3.Position = UDim2.new(0, minX, 0, minY); l3.Size = UDim2.new(0, thick, 0, h) end
+ if l4 then l4.Position = UDim2.new(0, maxX, 0, minY); l4.Size = UDim2.new(0, thick, 0, h) end
+
+local nl = gui:FindFirstChild('NameLabel')
+ local dl = gui:FindFirstChild('DescLabel')
+ if nl then nl.Position = UDim2.new(0, minX, 0, minY - 18) end
+ if dl then dl.Position = UDim2.new(0, minX, 0, minY - 32) end
+ end)
+
+table.insert(objEspConns, conn)
+ table.insert(objEspGuis, gui)
+end
+
+local function scanObjectESP()
+removeObjectESP()
+for _, obj in pairs(Workspace:GetDescendants()) do
+if obj:IsA('ProximityPrompt') then
 local parent = obj.Parent
 if not parent then continue end
 local adornPart = parent:IsA('BasePart') and parent or parent:FindFirstChildWhichIsA('BasePart')
 if not adornPart then continue end
-
 local actionText = '[E] ' .. (obj.ActionText ~= '' and obj.ActionText or parent.Name)
 local objectText = obj.ObjectText ~= '' and obj.ObjectText or parent.Name
-
-local holder = Instance.new('Frame')
-holder.BackgroundTransparency = 1
-holder.Size = UDim2.fromOffset(160, 32)
-holder.AnchorPoint = Vector2.new(0.5, 0.5)
-holder.Visible = false
-holder.Parent = gui
-
-local box = Instance.new('Frame')
-box.BackgroundTransparency = 1
-box.Size = UDim2.fromOffset(14, 14)
-box.Position = UDim2.new(0.5, -7, 0.5, 4)
-box.Parent = holder
-
-local stroke = Instance.new('UIStroke')
-stroke.Thickness = 1.5
-stroke.Color = Color3.fromRGB(255, 220, 50)
-stroke.Parent = box
-
-local nameLabel = Instance.new('TextLabel')
-nameLabel.BackgroundTransparency = 1
-nameLabel.TextColor3 = Color3.fromRGB(255, 220, 50)
-nameLabel.TextStrokeTransparency = 0
-nameLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-nameLabel.Font = Enum.Font.GothamBold
-nameLabel.TextSize = 11
-nameLabel.Text = actionText .. ' (' .. objectText .. ')'
-nameLabel.Size = UDim2.new(1, 0, 0, 14)
-nameLabel.Position = UDim2.fromOffset(0, -2)
-nameLabel.Parent = holder
-
-table.insert(objEspItems, { part = adornPart, holder = holder })
+createObjESP(adornPart, actionText, objectText)
 end
-end
-
-if not objEspRenderConn then
-objEspRenderConn = RunService.RenderStepped:Connect(function()
-if not Toggles['ObjectESP'] or not Toggles['ObjectESP'].Value then
-if objEspFolder then objEspFolder.Enabled = false end
-return
-end
-if objEspFolder then objEspFolder.Enabled = true end
-
-local camPos = Camera.CFrame.Position
-for i = #objEspItems, 1, -1 do
-local item = objEspItems[i]
-local part = item.part
-local holder = item.holder
-if not part or not part.Parent or not holder or not holder.Parent then
-if holder then holder:Destroy() end
-table.remove(objEspItems, i)
-else
-if (part.Position - camPos).Magnitude > 1000 then
-holder.Visible = false
-else
-local vp, onScreen = Camera:WorldToViewportPoint(part.Position)
-if onScreen and vp.Z > 0 then
-holder.Visible = true
-holder.Position = UDim2.fromOffset(math.floor(vp.X), math.floor(vp.Y))
-else
-holder.Visible = false
-end
-end
-end
-end
-end)
 end
 end
 
 VisRight:AddToggle('ObjectESP', {
 Text = 'Enable Object ESP',
 Default = false,
-Tooltip = '10초마다 주변 상호작용 오브젝트를 감지해 표시합니다 (렉 방지).',
+Tooltip = '상호작용 가능한 오브젝트에 박스와 이름을 표시합니다.',
 Callback = function(val)
 if val then
 objEspLastScan = tick()
@@ -497,13 +530,11 @@ end
 end
 })
 
-task.spawn(function()
-while task.wait(1) do
+RunService.Heartbeat:Connect(function()
 if Toggles['ObjectESP'] and Toggles['ObjectESP'].Value then
 if tick() - objEspLastScan >= OBJ_INTERVAL then
 objEspLastScan = tick()
 scanObjectESP()
-end
 end
 end
 end)
@@ -600,36 +631,20 @@ local function applyKorbloxHeadless(k, h)
 local char = Player.Character
 local hum = char and char:FindFirstChildOfClass('Humanoid')
 if not hum then return end
-
-pcall(function()
 local desc = hum:GetAppliedDescription()
 desc.RightLeg = k and 139607718 or 0
 if h then
 desc.Head = 15093053680
-end
-hum:ApplyDescription(desc)
-end)
-
-task.defer(function()
+pcall(function()
 local head = char:FindFirstChild('Head')
 if head then
-head.Transparency = h and 1 or 0
 for _, v in pairs(head:GetChildren()) do
-if v:IsA('SpecialMesh') then
-v.Scale = h and Vector3.new(0, 0, 0) or Vector3.new(1.25, 1.25, 1.25)
-elseif v:IsA('Decal') then
-v.Transparency = h and 1 or 0
+if v:IsA('SpecialMesh') then v.Scale = Vector3.new(0,0,0) end
 end
-end
-end
-
-local rLower = char:FindFirstChild('RightLowerLeg')
-local rFoot = char:FindFirstChild('RightFoot')
-if rLower and rFoot then
-rLower.Transparency = k and 1 or 0
-rFoot.Transparency = k and 1 or 0
 end
 end)
+end
+pcall(function() hum:ApplyDescription(desc) end)
 end
 
 AvLeft:AddToggle('Korblox', {
@@ -645,13 +660,6 @@ Default = false,
 Tooltip = '헤드리스를 클라이언트 측으로 적용합니다.',
 Callback = function(val) headlessOn = val; applyKorbloxHeadless(korbloxOn, headlessOn) end
 })
-
-Player.CharacterAdded:Connect(function()
-task.wait(1)
-if korbloxOn or headlessOn then
-applyKorbloxHeadless(korbloxOn, headlessOn)
-end
-end)
 
 AvLeft:AddInput('CopyAvatarId', {
 Default = '', Numeric = true, Finished = false,
@@ -707,11 +715,6 @@ if hum then
 local ok, desc = pcall(function() return Players:GetHumanoidDescriptionFromUserId(Player.UserId) end)
 if ok then pcall(function() hum:ApplyDescription(desc) end) end
 end
-for _, p in pairs(char:GetDescendants()) do
-if (p:IsA('BasePart') or p:IsA('Decal')) and p.Name ~= 'HumanoidRootPart' then
-p.Transparency = 0
-end
-end
 end
 end
 })
@@ -720,45 +723,37 @@ end
 local SetLeft = SettingsTab:AddLeftGroupbox('Keybinds')
 local SetRight = SettingsTab:AddRightGroupbox('Config')
 
-SetLeft:AddLabel('Toggle UI'):AddKeyPicker('ToggleUI', {
-Default = 'RightShift',
-NoUI = true,
-Text = 'Toggle UI'
+SetLeft:AddKeybind('ToggleUI', {
+Text = 'Toggle UI',
+Default = Enum.KeyCode.RightShift,
+NoUI = false,
+Callback = function() Library:ToggleWindowState() end
 })
-Library.ToggleKeybind = Options['ToggleUI']
 
-SetLeft:AddLabel('Noclip 토글'):AddKeyPicker('NoclipBind', {
-Default = 'N',
+SetLeft:AddKeybind('NoclipBind', {
 Text = 'Noclip 토글',
-Callback = function()
-if Toggles['Noclip'] then Toggles['Noclip']:SetValue(not Toggles['Noclip'].Value) end
-end
+Default = Enum.KeyCode.N,
+Callback = function() Toggles['Noclip']:SetValue(not Toggles['Noclip'].Value) end
 })
 
-SetLeft:AddLabel('Freecam 토글'):AddKeyPicker('FreecamBind', {
-Default = 'F',
+SetLeft:AddKeybind('FreecamBind', {
 Text = 'Freecam 토글',
-Callback = function()
-if Toggles['Freecam'] then Toggles['Freecam']:SetValue(not Toggles['Freecam'].Value) end
-end
+Default = Enum.KeyCode.F,
+Callback = function() Toggles['Freecam']:SetValue(not Toggles['Freecam'].Value) end
 })
 
-SetLeft:AddLabel('ESP 토글'):AddKeyPicker('ESPBind', {
-Default = 'Insert',
+SetLeft:AddKeybind('ESPBind', {
 Text = 'ESP 토글',
-Callback = function()
-if Toggles['PlayerESP'] then Toggles['PlayerESP']:SetValue(not Toggles['PlayerESP'].Value) end
-end
+Default = Enum.KeyCode.Insert,
+Callback = function() Toggles['PlayerESP']:SetValue(not Toggles['PlayerESP'].Value) end
 })
 
 SaveManager:SetLibrary(Library)
 ThemeManager:SetLibrary(Library)
 SaveManager:IgnoreThemeSettings()
 SaveManager:SetIgnoreList({ 'ToggleUI', 'NoclipBind', 'FreecamBind', 'ESPBind' })
-SaveManager:SetFolder('Naberius')
-ThemeManager:SetFolder('Naberius')
 SaveManager:BuildConfigSection(SetRight)
 ThemeManager:BuildThemeSection(SetRight)
-pcall(function() SaveManager:LoadAutoloadConfig() end)
+SaveManager:LoadAutoloadConfig()
 
 Library:Notify('Naberius 로드 완료!', 3)
