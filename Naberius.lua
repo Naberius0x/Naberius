@@ -1,4 +1,4 @@
--- T63-Hub (Full Integrated & Color Picker Added Version)
+-- Naberius (Full Integrated & Color Picker Added Version)
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local VirtualUser = game:GetService("VirtualUser")
@@ -32,7 +32,7 @@ end
 
 -- 창 생성
 local Window = Library:CreateWindow({
-    Title = 'T63-Hub',
+    Title = 'Naberius',
     Center = true,
     AutoShow = true,
 })
