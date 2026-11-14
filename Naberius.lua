@@ -1,4 +1,4 @@
--- Naberius Script (Full, Completely Fixed & Restored Version)
+-- Naberius Script (Full & Completely Fixed Version)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -142,9 +142,9 @@ Tooltip = 'Ctrl 누른 채 클릭하면 그 위치로 순간이동합니다.',
 Callback = function() end
 })
 
--- [완벽 수정됨] 두 번째 스크립트의 확실하고 안정적인 Ctrl + Click TP 감지 로직 적용
-UserInputService.InputBegan:Connect(function(input, gp)
-if gp then return end
+-- Ctrl + Click TP 입력 감지 오류 수정
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+if gameProcessed then return end
 if input.UserInputType == Enum.UserInputType.MouseButton1 then
 if Toggles['CtrlClickTp'] and Toggles['CtrlClickTp'].Value then
 if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.RightControl) then
@@ -207,13 +207,14 @@ local VisLeft = VisualsTab:AddLeftGroupbox('Player ESP')
 local VisRight = VisualsTab:AddRightGroupbox('Object ESP & X-Ray')
 local VisFree = VisualsTab:AddLeftGroupbox('Freecam')
 
--- Player ESP
+-- Player ESP (좌표 쏠림 현상 해결 및 외곽선/이름/체력바 완벽 구현)
 local espData = {}
 
 local function removeESPForPlayer(name)
 if espData[name] then
 pcall(function() espData[name].conn:Disconnect() end)
-pcall(function() espData[name].gui:Destroy() end)
+pcall(function() espData[name].highlight:Destroy() end)
+pcall(function() espData[name].billboard:Destroy() end)
 espData[name] = nil
 end
 end
@@ -224,132 +225,125 @@ removeESPForPlayer(name)
 end
 end
 
-local function makeESPGui(player)
-local gui = Instance.new('ScreenGui')
-gui.Name = 'ESP_' .. player.Name
-gui.ResetOnSpawn = false
-gui.IgnoreGuiInset = true
-gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-gui.Parent = getGuiParent()
-
-for i = 1, 4 do
- local line = Instance.new('Frame')
- line.Name = 'Line' .. i
- line.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
- line.BorderSizePixel = 0
- line.ZIndex = 10
- line.Parent = gui
- end
-
-local nameLabel = Instance.new('TextLabel')
- nameLabel.Name = 'NameLabel'
- nameLabel.BackgroundTransparency = 1
- nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
- nameLabel.TextStrokeTransparency = 0
- nameLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
- nameLabel.Font = Enum.Font.GothamBold
- nameLabel.TextSize = 12
- nameLabel.Text = player.Name
- nameLabel.Size = UDim2.new(0, 200, 0, 16)
- nameLabel.ZIndex = 10
- nameLabel.Parent = gui
-
-local hpBg = Instance.new('Frame')
- hpBg.Name = 'HpBg'
- hpBg.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
- hpBg.BorderSizePixel = 0
- hpBg.ZIndex = 10
- hpBg.Parent = gui
-
-local hpBar = Instance.new('Frame')
- hpBar.Name = 'HpBar'
- hpBar.BackgroundColor3 = Color3.fromRGB(50, 220, 50)
- hpBar.BorderSizePixel = 0
- hpBar.AnchorPoint = Vector2.new(0, 1)
- hpBar.ZIndex = 11
- hpBar.Parent = hpBg
-
-return gui
-end
-
 local function startESP(player)
 if player == Player then return end
 removeESPForPlayer(player.Name)
 
-local gui = makeESPGui(player)
+local function setupCharacterESP(char)
+if not char then return end
+local root = char:WaitForChild('HumanoidRootPart', 5)
+local hum = char:WaitForChild('Humanoid', 5)
+local head = char:WaitForChild('Head', 5)
+if not root or not hum or not head then return end
 
-local conn = RunService.RenderStepped:Connect(function()
- if not Toggles['PlayerESP'] or not Toggles['PlayerESP'].Value then
- gui.Enabled = false
- return
- end
-
-local char = player.Character
- local root = char and char:FindFirstChild('HumanoidRootPart')
- local hum = char and char:FindFirstChildOfClass('Humanoid')
-
-if not root or not hum or hum.Health <= 0 then
- gui.Enabled = false
- return
- end
-
-local topVP = Camera:WorldToViewportPoint(root.Position + Vector3.new(0, 3.2, 0))
- local botVP = Camera:WorldToViewportPoint(root.Position - Vector3.new(0, 3.2, 0))
-
-if topVP.Z <= 0 then
- gui.Enabled = false
- return
- end
-
-gui.Enabled = true
-
-local topX, topY = topVP.X, topVP.Y
- local botX, botY = botVP.X, botVP.Y
-
-local h = math.abs(botY - topY)
- local w = h * 0.55
- local cx = (topX + botX) / 2
-
-local L = cx - w / 2
- local R = cx + w / 2
- local T = topY
- local B = botY
- local thick = 1.5
+removeESPForPlayer(player.Name)
 
 local color = Options['ESPColor'] and Options['ESPColor'].Value or Color3.fromRGB(255, 50, 50)
 
-local l1 = gui:FindFirstChild('Line1')
- local l2 = gui:FindFirstChild('Line2')
- local l3 = gui:FindFirstChild('Line3')
- local l4 = gui:FindFirstChild('Line4')
+-- 1. 캐릭터 외곽선 하이라이트
+local highlight = Instance.new('Highlight')
+highlight.Name = 'Naberius_Highlight'
+highlight.Adornee = char
+highlight.FillColor = color
+highlight.FillTransparency = 0.75
+highlight.OutlineColor = color
+highlight.OutlineTransparency = 0
+highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+highlight.Parent = getGuiParent()
 
-if l1 then l1.BackgroundColor3 = color; l1.Position = UDim2.new(0, L, 0, T); l1.Size = UDim2.new(0, w, 0, thick) end
- if l2 then l2.BackgroundColor3 = color; l2.Position = UDim2.new(0, L, 0, B); l2.Size = UDim2.new(0, w, 0, thick) end
- if l3 then l3.BackgroundColor3 = color; l3.Position = UDim2.new(0, L, 0, T); l3.Size = UDim2.new(0, thick, 0, h) end
- if l4 then l4.BackgroundColor3 = color; l4.Position = UDim2.new(0, R, 0, T); l4.Size = UDim2.new(0, thick, 0, h) end
+-- 2. 머리 위 이름 및 옆면 체력바 (BillboardGui)
+local billboard = Instance.new('BillboardGui')
+billboard.Name = 'Naberius_Billboard'
+billboard.Adornee = root
+billboard.Size = UDim2.new(4.5, 0, 6, 0)
+billboard.StudsOffset = Vector3.new(0, 0.5, 0)
+billboard.AlwaysOnTop = true
+billboard.Parent = getGuiParent()
 
-local nl = gui:FindFirstChild('NameLabel')
- if nl then
- nl.Position = UDim2.new(0, L, 0, T - 17)
- nl.Size = UDim2.new(0, w, 0, 16)
- nl.TextXAlignment = Enum.TextXAlignment.Center
- end
+-- 사각 테두리 프레임
+local boxFrame = Instance.new('Frame')
+boxFrame.Name = 'BoxFrame'
+boxFrame.Size = UDim2.new(1, 0, 1, 0)
+boxFrame.BackgroundTransparency = 1
+boxFrame.Parent = billboard
 
-local hpBg = gui:FindFirstChild('HpBg')
- local hpBar = hpBg and hpBg:FindFirstChild('HpBar')
- if hpBg and hpBar then
- local bw = 4
- hpBg.Position = UDim2.new(0, L - bw - 2, 0, T)
- hpBg.Size = UDim2.new(0, bw, 0, h)
+local uiStroke = Instance.new('UIStroke')
+uiStroke.Color = color
+uiStroke.Thickness = 1.5
+uiStroke.Parent = boxFrame
+
+-- 머리 위 이름
+local nameLabel = Instance.new('TextLabel')
+nameLabel.Name = 'NameLabel'
+nameLabel.Size = UDim2.new(1.5, 0, 0.2, 0)
+nameLabel.Position = UDim2.new(-0.25, 0, -0.22, 0)
+nameLabel.BackgroundTransparency = 1
+nameLabel.Text = player.DisplayName .. ' (@' .. player.Name .. ')'
+nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+nameLabel.TextStrokeTransparency = 0
+nameLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+nameLabel.Font = Enum.Font.GothamBold
+nameLabel.TextScaled = true
+nameLabel.Parent = billboard
+
+-- 왼쪽 옆면 체력바 배경
+local hpBg = Instance.new('Frame')
+hpBg.Name = 'HpBg'
+hpBg.Size = UDim2.new(0.08, 0, 1, 0)
+hpBg.Position = UDim2.new(-0.14, 0, 0, 0)
+hpBg.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+hpBg.BorderSizePixel = 0
+hpBg.Parent = billboard
+
+-- 실시간 체력바 게이지
+local hpBar = Instance.new('Frame')
+hpBar.Name = 'HpBar'
+hpBar.Size = UDim2.new(1, 0, 1, 0)
+hpBar.Position = UDim2.new(0, 0, 1, 0)
+hpBar.AnchorPoint = Vector2.new(0, 1)
+hpBar.BackgroundColor3 = Color3.fromRGB(50, 255, 50)
+hpBar.BorderSizePixel = 0
+hpBar.Parent = hpBg
+
+-- 실시간 업데이트
+local conn = RunService.RenderStepped:Connect(function()
+local enabled = Toggles['PlayerESP'] and Toggles['PlayerESP'].Value
+if not enabled or not char.Parent or hum.Health <= 0 then
+highlight.Enabled = false
+billboard.Enabled = false
+return
+end
+
+highlight.Enabled = true
+billboard.Enabled = true
+
+local currentColor = Options['ESPColor'] and Options['ESPColor'].Value or Color3.fromRGB(255, 50, 50)
+highlight.FillColor = currentColor
+highlight.OutlineColor = currentColor
+uiStroke.Color = currentColor
 
 local pct = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
- hpBar.BackgroundColor3 = Color3.fromRGB(math.floor(255*(1-pct)), math.floor(255*pct), 0)
- hpBar.Size = UDim2.new(1, 0, pct, 0)
- hpBar.Position = UDim2.new(0, 0, 1, 0)
- end
- end)
+hpBar.Size = UDim2.new(1, 0, pct, 0)
+hpBar.BackgroundColor3 = Color3.fromRGB(math.floor(255 * (1 - pct)), math.floor(255 * pct), 50)
+end)
 
-espData[player.Name] = { gui = gui, conn = conn }
+espData[player.Name] = {
+highlight = highlight,
+billboard = billboard,
+conn = conn
+}
+end
+
+if player.Character then
+task.spawn(setupCharacterESP, player.Character)
+end
+
+player.CharacterAdded:Connect(function(newChar)
+task.wait(0.5)
+if Toggles['PlayerESP'] and Toggles['PlayerESP'].Value then
+setupCharacterESP(newChar)
+end
+end)
 end
 
 VisLeft:AddToggle('PlayerESP', {
@@ -369,12 +363,7 @@ Default = Color3.fromRGB(255, 50, 50),
 })
 
 Players.PlayerAdded:Connect(function(p)
-p.CharacterAdded:Connect(function()
-task.wait(1)
-if Toggles['PlayerESP'] and Toggles['PlayerESP'].Value then
 startESP(p)
-end
-end)
 end)
 
 Players.PlayerRemoving:Connect(function(p)
